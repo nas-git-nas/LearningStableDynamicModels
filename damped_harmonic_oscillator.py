@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 
 class DampedHarmonicOscillator():
     def __init__(self):
@@ -23,7 +24,7 @@ class DampedHarmonicOscillator():
         """
         X = self.generate_data(b)
         f_X = self.f_X(X)
-        return X, f_X
+        return torch.from_numpy(X).float(), torch.from_numpy(f_X).float()
 
     def generate_data(self, b):
         """

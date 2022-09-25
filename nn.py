@@ -7,40 +7,49 @@ class ICNN(nn.Module):
     def __init__(self):
         super(ICNN, self).__init__()
 
-        # model parameters
-        n_input = 2
-        n_hidden1 = 60
-        n_hidden2 = 60
-        n_out = 1
+        # FCNN: model parameters
+        fcnn_input_size = 2
+        fcnn_output_size = 2
 
-        # fully connected layers
-        self.fc1 = nn.Linear(n_input, n_hidden1)
-        self.fc2 = nn.Linear(n_hidden1, n_hidden2)
-        self.fc3 = nn.Linear(n_hidden2, n_out)
+        # ICNN: model parameters
+        icnn_input_size = 2
+        icnn_hidden1_size = 60
+        icnn_hidden2_size = 60
+        icnnn_output_size = 1
 
-        # input mapping
-        self.im2 = nn.Linear(n_input, n_hidden2, bias=False)
-        self.im3 = nn.Linear(n_input, n_out, bias=False)
+        # FCNN: layers
+        self.fcnn_fc1 = nn.Linear(fcnn_input_size, fcnn_output_size, bias=False)
+
+        # ICNN: fully connected layers
+        self.icnn_fc1 = nn.Linear(icnn_input_size, icnn_hidden1_size)
+        self.icnn_fc2 = nn.Linear(icnn_hidden1_size, icnn_hidden2_size)
+        self.icnn_fc3 = nn.Linear(icnn_hidden2_size, icnnn_output_size)
+
+        # ICNN: input mapping
+        self.icnn_im2 = nn.Linear(icnn_input_size, icnn_hidden2_size, bias=False)
+        self.icnn_im3 = nn.Linear(icnn_input_size, icnnn_output_size, bias=False)
  
-        # softplus (smooth approx. of ReLU)
-        self.sp = nn.Softplus()
+        # activation fcts.
+        self.sp = nn.Softplus() #softplus (smooth approx. of ReLU)
 
         self.epsilon = 0.01
 
-    def forward(self, x_in):
-        # first layer
-        x_fc1 = self.fc1(x_in)
-        x_sp1 = self.sp(x_fc1)
+    def forward(self, X):
+        # FCNN
+        X_approx = self.fcnn_fc1(X)
 
-        # second layer
-        x_fc2 = self.fc2(x_sp1)
-        x_im2 = self.im2(x_in)
-        x_sp2 = self.sp(x_fc2 + x_im2)
+        # ICNN
+        x_icnn_fc1 = self.fc1(X)
+        x_icnn_sp1 = self.sp(x_icnn_fc1)
 
-        # third layer
-        x_fc3 = self.fc3(x_sp2)
-        x_im3 = self.im3(x_in)
-        x_sp3 = self.sp(x_fc3 + x_im3)
+        x_icnn_fc2 = self.icnn_fc2(x_icnn_sp1)
+        x_icnn_im2 = self.icnn_im2(X)
+        x_icnn_sp2 = self.sp(x_icnn_fc2 + x_icnn_im2)
+
+        x_icnn_fc3 = self.fc3(x_icnn_sp2)
+        x_icnn_im3 = self.im3(X)
+        g_X = self.sp(x_icnn_fc3 + x_icnn_im3)
+        
         return x_sp3
 
     def predict(self, x):
