@@ -40,9 +40,15 @@ class SDNN(nn.Module):
         # FCNN
         f_X = self.forwardFCNN(X)
 
-        # Lyapunov        
-        V = self.forwardLyapunov(X) # (b)
-        dV = self.gradient_lyapunov(X) # (b x n)
+        # ICNN
+        g_X = self.forwardICNN(X)
+        with torch.no_grad():
+            g_zero = self.forwardICNN(torch.zeros(X.shape)) # TODO: optimize
+
+        # Lyapunov
+        
+        V = self.lyapunov(X, g_X, g_zero) # (b)
+        dV = self.gradient_lyapunov(X, g_X, g_zero) # (b x n)
 
         # best approx. of f_X that ensures stability
         f_opt = self.fOpt(f_X, V, dV)
@@ -51,16 +57,6 @@ class SDNN(nn.Module):
 
     def forwardFCNN(self, X):
         return self.fcnn_fc1(X)
-
-    def forwardLyapunov(self, X):
-        # ICNN
-        g_X = self.forwardICNN(X)
-        with torch.no_grad():
-            g_zero = self.forwardICNN(torch.zeros(X.shape)) # TODO: optimize    
-
-        sigma_lyap = self.relu(torch.flatten(g_X) - torch.flatten(g_zero))
-        V = sigma_lyap + self.epsilon*torch.diagonal(X@X.T)
-        return V
 
     def forwardICNN(self, X):
         x_icnn_fc1 = self.icnn_fc1(X)
@@ -76,20 +72,62 @@ class SDNN(nn.Module):
 
         return g_X
 
-    def gradient_lyapunov(self, X):
+    def lyapunov(self, X, g_X, g_zero):
+        """
+        Description: calc. lyapunov fct. V
+        In X: input batch (b x n)
+        In g_X: output of ICNN if input X (b)
+        In g_zero: output of ICNN if input x=0 (scalar)
+        Out: lyapunov fct. V from batch (b)
+        """
+        print(f"g shape: {g_X.shape}")
+        print(f"g_zero shape: {g_zero.shape}")
+        sigma_lyap = self.relu(torch.flatten(g_X) - torch.flatten(g_zero))
+        print(f"sigma_lyap shape = {sigma_lyap.shape}")
+        return sigma_lyap #+ self.epsilon*torch.diagonal(X@X.T)
+
+    def gradient_lyapunov(self, X, g_X, g_zero):
         """
         Description: calc. gradient of lyapunov fct. V (b x n)
         In X: input batch (b x n)
+        In g_X: output of ICNN if input X (b)
         Out dV: gradient of lyapunov fct. V (b x n)
         """
-        dV = torch.autograd.functional.jacobian(self.forwardLyapunov, X)
-        dV = torch.diagonal(dV,dim1=0,dim2=1).permute(1,0)
+        # J_X = torch.zeros(X.shape)
+        # J_zero = torch.zeros(X.shape)
+        # for i in range(X.shape[0]):
+        #     J_X[i,:] = torch.autograd.functional.jacobian(self.forward, X[i,:])
+        #     J_zero[i,:] = torch.autograd.functional.jacobian(self.forward, torch.zeros(2)) # TODO: replace constant
+        # dsigma_lyap = torch.tile(self.derivative_sigma_lyapunov(g_X, g_zero),(1,2))
+        # dV = dsigma_lyap*(J_X-J_zero) + 2*self.epsilon*X
+
+        J_X = torch.autograd.functional.jacobian(self.forwardICNN, X)
+        J_X = torch.diagonal(J_X,dim1=0,dim2=2).permute(0,2,1)[0,:,:] 
+        J_zero = torch.autograd.functional.jacobian(self.forwardICNN, torch.zeros(X.shape))
+        J_zero = torch.diagonal(J_zero,dim1=0,dim2=2).permute(0,2,1)[0,:,:] 
+        dsigma_lyap = self.derivative_sigma_lyapunov(g_X, g_zero)
+        dsigma_lyap = torch.tile(dsigma_lyap,(1,X.shape[1]))
+
+        dV = dsigma_lyap*(J_X-J_zero) + 2*self.epsilon*X
         return dV
+
+    def derivative_sigma_lyapunov(self, g, g_zero):
+        """
+        Description: enforces V(0)=0 (needed for positive definiteness of lyapunov ftc.)
+        In g: output of ICNN with input x
+        In g_zero: output of ICNN with input x=0
+        Out: derivative of lyapunov sigma
+        """
+        dsigma_lyap = g-g_zero
+        dsigma_lyap[dsigma_lyap<0] = 0
+        dsigma_lyap[dsigma_lyap>=0] = 1        
+        return dsigma_lyap  
 
     def fOpt(self, f_X, V, dV):
         stability_conditions = torch.diagonal(dV@f_X.T) + self.alpha*V # (b)
+        relu = nn.ReLU()
         dV_norm = (dV.T/torch.sum(dV*dV, dim=1)).T
-        f_opt = f_X - (dV_norm.T*self.relu(stability_conditions)).T
+        f_opt = f_X - (dV_norm.T*relu(stability_conditions)).T
 
         return f_opt
 
