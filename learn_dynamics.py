@@ -10,7 +10,7 @@ class LearnDynamics():
     def __init__(self):
         # neural network parameters
         self.learning_rate = 0.01
-        self.nb_epochs = 100
+        self.nb_epochs = 2
         self.batch_size = 100
         self.nb_batches = 100
 
@@ -18,7 +18,7 @@ class LearnDynamics():
         self.alpha = 0.1 # constant ???
         self.loss_constant = 1
         self.controlled_system = False
-        self.lyapunov_correction = False
+        self.lyapunov_correction = True
 
         # real dynamic system
         self.dho = DampedHarmonicOscillator(controlled_system=self.controlled_system)
@@ -34,24 +34,20 @@ class LearnDynamics():
         Description: optimize nb_epochs times the model with all data (batch_size*nb_batches)
         """
         # generate data set
-        # data_X, data_U, data_real = self.dho.generate_data(self.batch_size*self.nb_batches) # TODO: generator function
-        data = self.dho.generate_data(self.batch_size, self.nb_batches)
+        X, U, dX_real = [], [], []
+        for data in self.dho.generate_data(self.batch_size, self.nb_batches):
+            X.append(data[0])
+            U.append(data[1])
+            dX_real.append(data[2])
 
         start_time = time.time()
         for j in range(self.nb_epochs):
-            for i, batch_data in enumerate(data):
-                # X = data_X[i*self.batch_size:(i+1)*self.batch_size,:]
-                # U = None
-                # if self.controlled_system:
-                #     U = data_U[i*self.batch_size:(i+1)*self.batch_size,:]
-                # dX_real = data_real[i*self.batch_size:(i+1)*self.batch_size,:]
-                X, U, dX_real = batch_data[0], batch_data[1], batch_data[2]
-
+            for i in range(self.nb_batches):
                 # forward pass through models
-                dX_X = self.sdnn.forward(X, U) # output of FCNN if input X (n)
+                dX_X = self.sdnn.forward(X[i], U[i]) # output of FCNN if input X (n)
 
                 # calc. loss
-                loss = self.loss_function(dX_X, dX_real)
+                loss = self.loss_function(dX_X, dX_real[i])
                 self.loss_batches[self.nb_batches*j+i] = loss.item()
 
                 # backwards pass through models
@@ -89,7 +85,8 @@ class LearnDynamics():
         # TODO: plot lyapunov fct. and norm2 of lyapunov ||V||2
 
         # test model on test data set
-        test_X, test_U, test_real = self.dho.generate_data(self.batch_size)
+        test_data = self.dho.generate_data(self.batch_size, nb_batches=1)
+        test_X, test_U, test_real = next(test_data)
         test_dX_X = self.sdnn.forward(test_X, test_U)
         loss = self.loss_function(test_dX_X, test_real)
         print(f"Error = {loss}")
@@ -112,11 +109,42 @@ class LearnDynamics():
         plt.title(f"Learning rate: {self.learning_rate}, nb. epochs: {self.nb_epochs}")
         plt.show()
 
+    def plotLyapunov(self):
+        # define range of plot
+        if self.dho.x_min < self.dho.dx_min:
+            range_min = self.dho.x_min
+        else:
+            range_min = self.dho.dx_min
+        if self.dho.x_max > self.dho.dx_max:
+            range_max = self.dho.x_max
+        else:
+            range_max = self.dho.dx_max
+        input_range = torch.arange(range_min, range_max, 0.002)
+
+        # create equal distributed state vectors
+        x_vector = input_range.tile((input_range.size(0),))
+        dx_vector = input_range.repeat_interleave(input_range.size(0))
+        X = torch.zeros(x_vector.size(0),2)
+        X[:,0] = x_vector
+        X[:,1] = dx_vector
+
+        # calc. lyapunov fct. of each state
+        with torch.no_grad():
+            V = self.sdnn.forwardLyapunov(X)
+
+        plt.title('Lyapunov plot')
+        plt.xlabel('x')
+        plt.ylabel('dx')
+        contours = plt.contour(input_range, input_range, V.reshape(input_range.size(0),input_range.size(0)))
+        plt.clabel(contours, inline=1, fontsize=10)
+        plt.show()
+
 
 def learnSystemDynamics():
     ld = LearnDynamics()
     ld.optimize()
-    ld.plot_losses()
+    #ld.plot_losses()
+    ld.plotLyapunov()
 
 if __name__ == "__main__":
     learnSystemDynamics()      
