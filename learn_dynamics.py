@@ -1,30 +1,44 @@
 import numpy as np
 import time
+import os
 import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
 from damped_harmonic_oscillator import DampedHarmonicOscillator
 from csdnn import CSDNN
 
+if torch.cuda.is_available():  
+    dev = "cuda:0" 
+else:  
+    dev = "cpu"
+device = torch.device(dev)  
+
+
 class LearnDynamics():
     def __init__(self):
+        # save model
+        self.model_name = "first_model"
+        self.model_dir = "models"
+        self.model_path = os.path.join(self.model_dir, self.model_name)
+
         # neural network parameters
         self.learning_rate = 0.01
-        self.nb_epochs = 2
-        self.batch_size = 100
-        self.nb_batches = 100
+        self.nb_epochs = 1
+        self.batch_size = 1000
+        self.nb_batches = 1
 
         # dynamic model parameters
         self.alpha = 0.1 # constant ???
         self.loss_constant = 1
         self.controlled_system = False
-        self.lyapunov_correction = True
+        self.lyapunov_correction = False
 
         # real dynamic system
-        self.dho = DampedHarmonicOscillator(controlled_system=self.controlled_system)
+        self.dho = DampedHarmonicOscillator(controlled_system=self.controlled_system, dev=device)
 
         # modelled dynamic system
-        self.sdnn = CSDNN(controlled_system=self.controlled_system, lyapunov_correction=self.lyapunov_correction)
+        self.sdnn = CSDNN(controlled_system=self.controlled_system, lyapunov_correction=self.lyapunov_correction, dev=device)
+        self.sdnn.to(device)
         self.optimizer = torch.optim.SGD(self.sdnn.parameters(), lr=self.learning_rate)
         self.loss_batches = np.zeros((self.nb_epochs*self.nb_batches))
         self.loss_epochs = np.zeros((self.nb_epochs))
@@ -63,8 +77,6 @@ class LearnDynamics():
             #     self.learning_rate *= 0.8
             # elif delta_loss > 0.1:
             #     self.learning_rate *= 1.2
-
-
             
         end_time =time.time()
         print(f"\nTotal time = {end_time-start_time}, average time per epoch = {(end_time-start_time)/self.nb_epochs}")
@@ -78,7 +90,17 @@ class LearnDynamics():
         """
         return (self.loss_constant/dX_X.shape[0]) * torch.sum(torch.square(dX_X-dX_real))
 
-    def plot_losses(self):
+    def saveModel(self):
+        # save model parameters
+        torch.save(self.sdnn.state_dict(), self.model_path)
+
+        # save training parameters
+        with open(os.path.join(self.model_dir, self.model_name+"_info"), 'w') as f:
+            f.write("--learning rate:\n" + str(self.learning_rate) + "\n\n")
+            f.write("--number of epoches:\n" + str(self.nb_epochs) + "\n\n")
+            f.write("--number of batches:\n" + str(self.nb_batches) + "\n\n")
+
+    def printResults(self):
         """
         Description: plot losses and print some weights"""
 
@@ -89,10 +111,7 @@ class LearnDynamics():
         test_X, test_U, test_real = next(test_data)
         test_dX_X = self.sdnn.forward(test_X, test_U)
         loss = self.loss_function(test_dX_X, test_real)
-        print(f"Error = {loss}")
-
-        # for name, para in self.sdnn.named_parameters():
-        #     print('{}: {}, \n{}'.format(name, para.shape, para))
+        print(f"Error on testing set = {loss}")
 
         fnn_weights = self.sdnn.fnn_fc1.weight
         print(f"FCNN weights: {fnn_weights}")
@@ -100,11 +119,7 @@ class LearnDynamics():
             gnn_weights = self.sdnn.gnn_fc1.weight
             print(f"GCNN weights: {gnn_weights}")    
 
-
-
-
-
-    def plotLyapunov(self):
+    def plotResults(self):
         # define range of plot
         if self.dho.x_min < self.dho.dx_min:
             range_min = self.dho.x_min
@@ -114,12 +129,12 @@ class LearnDynamics():
             range_max = self.dho.x_max
         else:
             range_max = self.dho.dx_max
-        input_range = torch.arange(range_min, range_max, 0.1)
+        input_range = torch.arange(range_min, range_max, 0.1).to(device)
 
         # create equal distributed state vectors
         x_vector = input_range.tile((input_range.size(0),))
         dx_vector = input_range.repeat_interleave(input_range.size(0))
-        X = torch.zeros(x_vector.size(0),2)
+        X = torch.zeros(x_vector.size(0),2).to(device)
         X[:,0] = x_vector
         X[:,1] = dx_vector
 
@@ -133,7 +148,7 @@ class LearnDynamics():
             dX_opt = self.sdnn.forward(X, None)
 
         # calc. real system dynamics
-        dX_real = self.dho.dX_X(X, None)
+        dX_real = self.dho.dX_X(X.cpu(), None)
 
         fig, axs = plt.subplots(nrows=2, ncols=2, figsize =(12, 12))
 
@@ -172,8 +187,11 @@ class LearnDynamics():
 def learnSystemDynamics():
     ld = LearnDynamics()
     ld.optimize()
-    #ld.plot_losses()
-    ld.plotLyapunov()
+    ld.printResults()
+    ld.saveModel()
+    #ld.plotResults()
+
+    
 
 if __name__ == "__main__":
     learnSystemDynamics()      

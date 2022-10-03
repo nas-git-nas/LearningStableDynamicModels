@@ -2,10 +2,13 @@ import numpy as np
 import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
+import time
 
 class CSDNN(nn.Module):
-    def __init__(self, controlled_system, lyapunov_correction):
+    def __init__(self, controlled_system, lyapunov_correction, dev):
         super(CSDNN, self).__init__()
+
+        self.device = dev
 
         # system parameters
         self.controlled_system = controlled_system
@@ -66,9 +69,20 @@ class CSDNN(nn.Module):
         # f_opt is the best approx. of f_X that ensures lyapunov stability (N x D)
         f_opt = f_X
         if self.lyapunov_correction:
+            start = time.time()
             V = self.forwardLyapunov(X) # (N)
+            stop = time.time()
+            print(f"V time = {stop-start}")
+
+            start = time.time()
             dV = self.gradient_lyapunov(X) # (N x D)
+            stop = time.time()
+            print(f"dV time = {stop-start}")
+
+            start = time.time()
             f_opt -= self.fCorrection(f_X, g_X, V, dV)
+            stop = time.time()
+            print(f"f_opt time = {stop-start}")
 
         # dX_opt is the derivative of the state including control input u
         dX_opt = f_opt
@@ -103,8 +117,8 @@ class CSDNN(nn.Module):
         """
         h_X = self.forwardICNN(X) # (N x 1)
         with torch.no_grad():
-            h_zero = self.forwardICNN(torch.zeros(1,self.D)) # (1 x 1) 
-            h_zero = h_zero.tile(X.shape[0],1) # (N x 1)
+            h_zero = self.forwardICNN(torch.zeros(1,self.D).to(self.device)) # (1 x 1) 
+        h_zero = h_zero.tile(X.shape[0],1) # (N x 1)
 
         V = self.activationLyapunov(h_X, h_zero) + self.epsilon*torch.einsum('nd,nd->n', X, X) # (N)
         return V

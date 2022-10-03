@@ -2,8 +2,9 @@ import numpy as np
 import torch
 
 class DampedHarmonicOscillator():
-    def __init__(self, controlled_system):
+    def __init__(self, controlled_system, dev):
 
+        self.device = dev
         self.controlled_system = controlled_system
 
         # system parameters
@@ -33,8 +34,8 @@ class DampedHarmonicOscillator():
             X, U = self.generate_input(N)
             dX_X = self.dX_X(X, U)
             if self.controlled_system:
-                yield torch.from_numpy(X).float(), torch.from_numpy(U).float(), torch.from_numpy(dX_X).float()
-            yield torch.from_numpy(X).float(), None, torch.from_numpy(dX_X).float()
+                yield torch.from_numpy(X).float().to(self.device), torch.from_numpy(U).float().to(self.device), torch.from_numpy(dX_X).float().to(self.device)
+            yield torch.from_numpy(X).float().to(self.device), None, torch.from_numpy(dX_X).float().to(self.device)
 
     def generate_input(self, N):
         """
