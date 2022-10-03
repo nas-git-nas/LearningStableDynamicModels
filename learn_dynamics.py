@@ -102,12 +102,7 @@ class LearnDynamics():
 
 
 
-        # plot resulting loss
-        plt.plot(self.loss_batches)
-        plt.ylabel('loss')
-        plt.xlabel('nb. batches')
-        plt.title(f"Learning rate: {self.learning_rate}, nb. epochs: {self.nb_epochs}")
-        plt.show()
+
 
     def plotLyapunov(self):
         # define range of plot
@@ -119,7 +114,7 @@ class LearnDynamics():
             range_max = self.dho.x_max
         else:
             range_max = self.dho.dx_max
-        input_range = torch.arange(range_min, range_max, 0.002)
+        input_range = torch.arange(range_min, range_max, 0.1)
 
         # create equal distributed state vectors
         x_vector = input_range.tile((input_range.size(0),))
@@ -132,11 +127,45 @@ class LearnDynamics():
         with torch.no_grad():
             V = self.sdnn.forwardLyapunov(X)
 
-        plt.title('Lyapunov plot')
-        plt.xlabel('x')
-        plt.ylabel('dx')
-        contours = plt.contour(input_range, input_range, V.reshape(input_range.size(0),input_range.size(0)))
-        plt.clabel(contours, inline=1, fontsize=10)
+        # calc. learned system dynamics
+        self.sdnn.controlled_system = False
+        with torch.no_grad():
+            dX_opt = self.sdnn.forward(X, None)
+
+        # calc. real system dynamics
+        dX_real = self.dho.dX_X(X, None)
+
+        fig, axs = plt.subplots(nrows=2, ncols=2, figsize =(12, 12))
+
+        # plot resulting loss 
+        axs[0,0].set_title(f"Learning rate: {self.learning_rate}, nb. epochs: {self.nb_epochs}")
+        axs[0,0].set_xlabel('nb. batches')
+        axs[0,0].set_ylabel('loss')
+        axs[0,0].plot(self.loss_batches)
+
+        axs[0,1].set_title('Lyapunov fct. (V)')
+        axs[0,1].set_xlabel('x')
+        axs[0,1].set_ylabel('dx')
+        contours = axs[0,1].contour(input_range, input_range, V.reshape(input_range.size(0),input_range.size(0)))
+        axs[0,1].clabel(contours, inline=1, fontsize=10)
+        axs[0,1].set_aspect('equal')
+        
+        axs[1,0].set_title('Learned dynamics (dX_opt)')
+        axs[1,0].set_xlabel('x')
+        axs[1,0].set_ylabel('dx')
+        axs[1,0].quiver(X[:,0], X[:,1], dX_opt[:,0], dX_opt[:,1])
+        axs[1,0].xaxis.set_ticks([])
+        axs[1,0].yaxis.set_ticks([])
+        axs[1,0].set_aspect('equal')
+
+        axs[1,1].set_title('Real dynamics (dX_real)')
+        axs[1,1].set_xlabel('x')
+        axs[1,1].set_ylabel('dx')
+        axs[1,1].quiver(X[:,0], X[:,1], dX_real[:,0], dX_real[:,1])
+        axs[1,1].xaxis.set_ticks([])
+        axs[1,1].yaxis.set_ticks([])
+        axs[1,1].set_aspect('equal')
+
         plt.show()
 
 
