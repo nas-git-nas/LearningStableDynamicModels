@@ -51,6 +51,9 @@ class CSDNN(nn.Module):
         self.relu = nn.ReLU()
         self.sp = nn.Softplus() #softplus (smooth approx. of ReLU)
 
+        self.h_X = None
+        self.h_zero = None
+
     def forward(self, X, U):
         """
         Description: forward pass through main model
@@ -69,20 +72,20 @@ class CSDNN(nn.Module):
         # f_opt is the best approx. of f_X that ensures lyapunov stability (N x D)
         f_opt = f_X
         if self.lyapunov_correction:
-            start = time.time()
+            # start = time.time()
             V = self.forwardLyapunov(X) # (N)
-            stop = time.time()
-            print(f"V time = {stop-start}")
+            # stop = time.time()
+            # print(f"V time = {stop-start}")
 
-            start = time.time()
+            # start = time.time()
             dV = self.gradient_lyapunov(X) # (N x D)
-            stop = time.time()
-            print(f"dV time = {stop-start}")
+            # stop = time.time()
+            # print(f"dV time = {stop-start}")
 
-            start = time.time()
-            f_opt -= self.fCorrection(f_X, g_X, V, dV)
-            stop = time.time()
-            print(f"f_opt time = {stop-start}")
+            # start = time.time()
+            f_opt = f_opt - self.fCorrection(f_X, g_X, V, dV)
+            # stop = time.time()
+            # print(f"f_opt time = {stop-start}")
 
         # dX_opt is the derivative of the state including control input u
         dX_opt = f_opt
@@ -115,12 +118,12 @@ class CSDNN(nn.Module):
         In X: state input batch (N x D)
         Out V: lyapunov fct. (N)
         """
-        h_X = self.forwardICNN(X) # (N x 1)
+        self.h_X = self.forwardICNN(X) # (N x 1)
         with torch.no_grad():
             h_zero = self.forwardICNN(torch.zeros(1,self.D).to(self.device)) # (1 x 1) 
-        h_zero = h_zero.tile(X.shape[0],1) # (N x 1)
+        self.h_zero = h_zero.tile(X.shape[0],1) # (N x 1)
 
-        V = self.activationLyapunov(h_X, h_zero) + self.epsilon*torch.einsum('nd,nd->n', X, X) # (N)
+        V = self.activationLyapunov(self.h_X, self.h_zero) + self.epsilon*torch.einsum('nd,nd->n', X, X) # (N)
         return V
 
     def activationLyapunov(self, h_X, h_zero):
@@ -159,9 +162,37 @@ class CSDNN(nn.Module):
         In X: input batch (N x D)
         Out dV: gradient of lyapunov fct. V (N x D)
         """
-        dV = torch.autograd.functional.jacobian(self.forwardLyapunov, X) # TODO: optimize
-        dV = torch.diagonal(dV,dim1=0,dim2=1).permute(1,0)
+        # dV = torch.autograd.functional.jacobian(self.forwardLyapunov, X) # TODO: optimize
+        # dV = torch.diagonal(dV,dim1=0,dim2=1).permute(1,0)
+
+        # Vx_grad = torch.autograd.functional.jacobian(lambda x_: torch.sum(self.V_tilde(x_), axis=0), x, create_graph=True).squeeze(0)
+
+        # dV = torch.empty((X.shape[0], self.D))
+        # for i in range(X.shape[0]):
+        #     dV[i,:] = torch.autograd.functional.jacobian(self.forwardLyapunov, X[i,:].reshape(1,self.D))
+
+        # calc. of full jacobian 
+        # dV = torch.autograd.functional.jacobian(self.forwardICNN, X) # TODO: optimize
+        # dV = torch.diagonal(dV.squeeze(), dim1=0, dim2=1).permute(1,0)
+
+        # calc. of piecwise jacobian
+        dV = torch.empty((X.shape[0], self.D))
+        for i in range(X.shape[0]):
+            dV[i,:] = torch.autograd.functional.jacobian(self.forwardICNN, X[i,:].reshape(1,self.D))
+
+        # partial analytical solution
+        dsigma_lyap = self.derivativeLyapActivation(self.h_X, self.h_zero)
+        dV = torch.einsum('nd,n->nd', dV, dsigma_lyap) + 2*self.epsilon*X
+
         return dV
+
+    def derivativeLyapActivation(self, h_X, h_zero):
+
+        dsigma_lyap = h_X.flatten() - h_zero.flatten()
+        dsigma_lyap[dsigma_lyap<=0] = 0
+        dsigma_lyap[dsigma_lyap>=1] = 1
+        return dsigma_lyap # (N)
+
 
     def fCorrection(self, f_X, g_X, V, dV):
         """
@@ -172,9 +203,9 @@ class CSDNN(nn.Module):
         In dV: gradient of lyapunov fct. V (N x D)
         Out f_cor: forrection of f_X (N x D)
         """
-        stability_conditions = torch.diagonal(dV@f_X.T) + self.alpha*V # (N)
+        stability_conditions = torch.einsum('nd,dn->n', dV, f_X.T) + self.alpha*V # (N), torch.diagonal(dV@f_X.T)
         if self.controlled_system:
-            stability_conditions += torch.einsum('nd,ndm->n', dV, g_X)
+            stability_conditions = stability_conditions + torch.einsum('nd,ndm->n', dV, g_X)
 
         dV_norm = (dV.T/torch.sum(dV*dV, dim=1)).T # (N x D) TODO: optimize
 

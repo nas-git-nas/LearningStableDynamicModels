@@ -35,7 +35,8 @@ class DampedHarmonicOscillator():
             dX_X = self.dX_X(X, U)
             if self.controlled_system:
                 yield torch.from_numpy(X).float().to(self.device), torch.from_numpy(U).float().to(self.device), torch.from_numpy(dX_X).float().to(self.device)
-            yield torch.from_numpy(X).float().to(self.device), None, torch.from_numpy(dX_X).float().to(self.device)
+            else:
+                yield torch.from_numpy(X).float().to(self.device), None, torch.from_numpy(dX_X).float().to(self.device)
 
     def generate_input(self, N):
         """

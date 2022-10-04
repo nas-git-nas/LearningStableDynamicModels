@@ -13,6 +13,8 @@ else:
     dev = "cpu"
 device = torch.device(dev)  
 
+#torch.autograd.set_detect_anomaly(True)
+
 
 class LearnDynamics():
     def __init__(self):
@@ -24,14 +26,14 @@ class LearnDynamics():
         # neural network parameters
         self.learning_rate = 0.01
         self.nb_epochs = 1
-        self.batch_size = 1000
-        self.nb_batches = 1
+        self.batch_size = 100
+        self.nb_batches = 100
 
         # dynamic model parameters
         self.alpha = 0.1 # constant ???
         self.loss_constant = 1
-        self.controlled_system = False
-        self.lyapunov_correction = False
+        self.controlled_system = True
+        self.lyapunov_correction = True
 
         # real dynamic system
         self.dho = DampedHarmonicOscillator(controlled_system=self.controlled_system, dev=device)
@@ -148,6 +150,7 @@ class LearnDynamics():
             dX_opt = self.sdnn.forward(X, None)
 
         # calc. real system dynamics
+        self.dho.controlled_system = False
         dX_real = self.dho.dX_X(X.cpu(), None)
 
         fig, axs = plt.subplots(nrows=2, ncols=2, figsize =(12, 12))
@@ -189,7 +192,7 @@ def learnSystemDynamics():
     ld.optimize()
     ld.printResults()
     ld.saveModel()
-    #ld.plotResults()
+    ld.plotResults()
 
     
 

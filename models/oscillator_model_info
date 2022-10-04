@@ -2,7 +2,7 @@
 0.01
 
 --number of epoches:
-1
+100
 
 --number of batches:
 100
