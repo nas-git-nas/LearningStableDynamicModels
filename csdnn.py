@@ -162,27 +162,20 @@ class CSDNN(nn.Module):
         In X: input batch (N x D)
         Out dV: gradient of lyapunov fct. V (N x D)
         """
-        # dV = torch.autograd.functional.jacobian(self.forwardLyapunov, X) # TODO: optimize
+        # dV = torch.autograd.functional.jacobian(self.forwardLyapunov, X, create_graph=True)
         # dV = torch.diagonal(dV,dim1=0,dim2=1).permute(1,0)
 
-        # Vx_grad = torch.autograd.functional.jacobian(lambda x_: torch.sum(self.V_tilde(x_), axis=0), x, create_graph=True).squeeze(0)
-
-        # dV = torch.empty((X.shape[0], self.D))
-        # for i in range(X.shape[0]):
-        #     dV[i,:] = torch.autograd.functional.jacobian(self.forwardLyapunov, X[i,:].reshape(1,self.D))
-
-        # calc. of full jacobian 
-        # dV = torch.autograd.functional.jacobian(self.forwardICNN, X) # TODO: optimize
-        # dV = torch.diagonal(dV.squeeze(), dim1=0, dim2=1).permute(1,0)
-
-        # calc. of piecwise jacobian
-        dV = torch.empty((X.shape[0], self.D))
-        for i in range(X.shape[0]):
-            dV[i,:] = torch.autograd.functional.jacobian(self.forwardICNN, X[i,:].reshape(1,self.D))
+        # The fct. jacobian from torch.autograde returns a squeezed 4 dimensional matrix where every output dimension is derived
+        # by every input dimension [first ouput dimension, second ouput dimension, first input dimension, second input dimension].
+        # We know that the ouput of each sample depends uniquly on its corresponding input and the derivative with respect to each
+        # other sample will be equal to zero. Therefore, we can sum up all samples before calculating the jacobian. This prevents
+        # to calculate a jacobian that is one dimension larger and diagonalizing it afterwards.
+        dV = torch.autograd.functional.jacobian(lambda X: torch.sum(self.forwardLyapunov(X), axis=0), X, create_graph=True).squeeze(0)
 
         # partial analytical solution
-        dsigma_lyap = self.derivativeLyapActivation(self.h_X, self.h_zero)
-        dV = torch.einsum('nd,n->nd', dV, dsigma_lyap) + 2*self.epsilon*X
+        # dV = torch.autograd.functional.jacobian(lambda X: torch.sum(self.forwardICNN(X), axis=0), X, create_graph=True).squeeze(0)
+        # dsigma_lyap = self.derivativeLyapActivation(self.h_X, self.h_zero)
+        # dV = torch.einsum('nd,n->nd', dV, dsigma_lyap) + 2*self.epsilon*X
 
         return dV
 
