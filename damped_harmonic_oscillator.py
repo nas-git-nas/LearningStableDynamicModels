@@ -14,8 +14,8 @@ class DampedHarmonicOscillator():
         self.friction_coeff = 0.1
 
         # system boundaries
-        self.x_min = -1
-        self.x_max = 1
+        self.x_min = -0.5
+        self.x_max = 1.5
         self.dx_min = -0.5
         self.dx_max = 0.5
         self.u_min = -1

@@ -83,7 +83,7 @@ class CSDNN(nn.Module):
             # print(f"dV time = {stop-start}")
 
             # start = time.time()
-            f_opt = f_opt - self.fCorrection(f_X, g_X, V, dV)
+            f_opt = f_opt + self.fCorrection(f_X, g_X, V, dV)
             # stop = time.time()
             # print(f"f_opt time = {stop-start}")
 
@@ -179,12 +179,12 @@ class CSDNN(nn.Module):
 
         return dV
 
-    def derivativeLyapActivation(self, h_X, h_zero):
+    # def derivativeLyapActivation(self, h_X, h_zero):
 
-        dsigma_lyap = h_X.flatten() - h_zero.flatten()
-        dsigma_lyap[dsigma_lyap<=0] = 0
-        dsigma_lyap[dsigma_lyap>=1] = 1
-        return dsigma_lyap # (N)
+    #     dsigma_lyap = h_X.flatten() - h_zero.flatten()
+    #     dsigma_lyap[dsigma_lyap<=0] = 0
+    #     dsigma_lyap[dsigma_lyap>=1] = 1
+    #     return dsigma_lyap # (N)
 
 
     def fCorrection(self, f_X, g_X, V, dV):
@@ -196,13 +196,13 @@ class CSDNN(nn.Module):
         In dV: gradient of lyapunov fct. V (N x D)
         Out f_cor: forrection of f_X (N x D)
         """
-        stability_conditions = torch.einsum('nd,dn->n', dV, f_X.T) + self.alpha*V # (N), torch.diagonal(dV@f_X.T)
+        stability_conditions = torch.einsum('nd,nd->n', dV, f_X) + self.alpha*V # (N)
         if self.controlled_system:
-            stability_conditions = stability_conditions + torch.einsum('nd,ndm->n', dV, g_X)
+            stability_conditions = stability_conditions - torch.sum(torch.abs(torch.einsum('nd,ndm->nm', dV, g_X)), dim=1)
 
-        dV_norm = (dV.T/torch.sum(dV*dV, dim=1)).T # (N x D) TODO: optimize
+        dV_norm = torch.einsum('nd,n->nd', dV, (1/torch.einsum('nd,nd->n', dV, dV))) # (N x D), normalize dV with squared L2-norm
 
-        return torch.einsum('nd,n->nd', dV_norm, stability_conditions)
+        return -torch.einsum('nd,n->nd', dV_norm, self.relu(stability_conditions))
 
 
 

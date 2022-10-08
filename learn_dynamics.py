@@ -28,8 +28,8 @@ class LearnDynamics():
         
         # neural network parameters
         self.learning_rate = 0.01
-        self.nb_epochs = 200
-        self.nb_batches = 300
+        self.nb_epochs = 100
+        self.nb_batches = 100
         self.batch_size = 1000
         
 
@@ -74,14 +74,14 @@ class LearnDynamics():
                 loss.backward()
                 self.optimizer.step()
 
-            if j == 50:
-                self.learning_rate = 0.005
+            # if j == 50:
+            #     self.learning_rate = 0.005
 
-            if j == 100:
-                self.learning_rate = 0.0001
+            # if j == 100:
+            #     self.learning_rate = 0.0001
 
-            if j == 150:
-                self.learning_rate = 0.00005
+            # if j == 150:
+            #     self.learning_rate = 0.00005
 
             self.loss_epochs[j] = np.mean(self.loss_batches[self.nb_batches*j:self.nb_batches*(j+1)])
             print(f"Epoch {j}: Avg. loss = {self.loss_epochs[j]}, lr = {self.learning_rate}")
@@ -98,9 +98,21 @@ class LearnDynamics():
         """
         return (self.loss_constant/dX_X.shape[0]) * torch.sum(torch.square(dX_X-dX_real))
 
+    def testModel(self):
+        # create new test data set
+        self.dho.generate_data(self.batch_size, nb_batches=1)
+
+        # test model on test data set
+        test_X, test_U, test_dX_real = self.dho.getData()
+        test_dX_X = self.sdnn.forward(test_X[0,:,:], test_U[0,:,:])
+        return self.loss_function(test_dX_X, test_dX_real[0,:,:])        
+
     def saveModel(self):
         # save model parameters
         torch.save(self.sdnn.state_dict(), os.path.join(self.model_dir, self.model_name+"_model"))
+
+        # test model
+        testing_loss = self.testModel()
 
         # save training parameters
         with open(os.path.join(self.model_dir, self.model_name+"_log"), 'w') as f:
@@ -112,7 +124,11 @@ class LearnDynamics():
             f.write("--number of epoches:\n" + str(self.nb_epochs) + "\n\n")
             f.write("--number of batches:\n" + str(self.nb_batches) + "\n\n")
             f.write("--number of samples per batch:\n" + str(self.batch_size) + "\n\n")
-            f.write("--Losses:\n")
+            f.write("--FNN fc1 weights:\n" + str(self.sdnn.fnn_fc1.weight) + "\n\n")
+            f.write("--GNN fc1 weights:\n" + str(self.sdnn.gnn_fc1.weight) + "\n\n")
+            f.write("--GNN fc1 bias:\n" + str(self.sdnn.gnn_fc1.bias) + "\n\n")
+            f.write("--Testing loss:\n" + str(testing_loss) + "\n\n")
+            f.write("--Training losses:\n")
             for loss in self.loss_batches:
                 f.write(str(loss) + "\n")
 
@@ -123,14 +139,7 @@ class LearnDynamics():
     def printResults(self):
         """
         Description: plot losses and print some weights"""
-
-        # create new test data set
-        self.dho.generate_data(self.batch_size, nb_batches=1)
-
-        # test model on test data set
-        test_X, test_U, test_dX_real = self.dho.getData()
-        test_dX_X = self.sdnn.forward(test_X[0,:,:], test_U[0,:,:])
-        loss = self.loss_function(test_dX_X, test_dX_real[0,:,:])
+        loss = self.testModel()
         print(f"Error on testing set = {loss}")
 
         fnn_weights = self.sdnn.fnn_fc1.weight
@@ -146,7 +155,6 @@ class LearnDynamics():
         plot_dx_min = self.dho.dx_min - (self.dho.dx_max-self.dho.dx_min)/4
         plot_dx_max = self.dho.dx_max + (self.dho.dx_max-self.dho.dx_min)/4
 
-
         # define range of plot
         x_range = torch.arange(plot_x_min, plot_x_max+0.1, 0.1).to(device)
         dx_range = torch.arange(plot_dx_min, plot_dx_max+0.1, 0.1).to(device)
@@ -160,7 +168,7 @@ class LearnDynamics():
 
         # define control input
         U_zero = torch.zeros((X.shape[0],self.dho.M))
-        U_max = torch.ones((X.shape[0],self.dho.M)) * self.dho.u_max
+        U_max = torch.ones((X.shape[0],self.dho.M)) * self.dho.u_min
 
         fig, axs = plt.subplots(nrows=4, ncols=2, figsize =(12, 12))
 
