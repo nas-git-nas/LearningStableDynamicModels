@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 
-class DampedHarmonicOscillator():
+class DampedHarmonicOscillatorGenerator():
     def __init__(self, dev):
 
         self.device = dev
@@ -80,10 +80,10 @@ class DampedHarmonicOscillator():
 def test_oscillator():
     # parameters
     batch_size = 3
-    dho = DampedHarmonicOscillator()
+    gen = DampedHarmonicOscillator()
 
     # generate batch
-    X, U, f_X = dho.generate_data(batch_size)
+    X, U, f_X = gen.generate_data(batch_size)
     print(f"X = {X}, \nU = {U}, \nf_X = {f_X}")
 
 if __name__ == "__main__":

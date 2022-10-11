@@ -4,9 +4,9 @@ import torch.nn as nn
 import matplotlib.pyplot as plt
 import time
 
-class CSDNN(nn.Module):
+class DampedHarmonicOscillatorModel(nn.Module):
     def __init__(self, controlled_system, lyapunov_correction, dev):
-        super(CSDNN, self).__init__()
+        super(DampedHarmonicOscillatorModel, self).__init__()
 
         self.device = dev
 
