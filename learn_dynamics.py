@@ -8,6 +8,8 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from damped_harmonic_oscillator_model import DampedHarmonicOscillatorModel
 from damped_harmonic_oscillator_generator import DampedHarmonicOscillatorGenerator
+from continuous_stirred_tank_reactor_generator import ContinuousStirredTankReactorGenerator
+from continuous_stirred_tank_reactor_model import ContinuousStirredTankReactorModel
 
 if torch.cuda.is_available():  
     dev = "cuda:0" 
@@ -15,13 +17,14 @@ else:
     dev = "cpu"
 device = torch.device(dev)  
 
-#torch.autograd.set_detect_anomaly(True)
+# torch.autograd.set_detect_anomaly(True)
 
 
 class LearnDynamics():
     def __init__(self):
         # model type
-        self.model_type = "damped_harmonic_oscillator"
+        # self.model_type = "damped_harmonic_oscillator"
+        self.model_type = "continuous_stirred_tank_reactor"
 
         # save model
         t = datetime.now()
@@ -30,23 +33,31 @@ class LearnDynamics():
         os.mkdir(self.model_dir)
         
         # neural network parameters
-        self.learning_rate = 0.01
-        self.nb_epochs = 50
+        if self.model_type == "damped_harmonic_oscillator":
+            self.learning_rate = 0.01
+        elif self.model_type == "continuous_stirred_tank_reactor":
+            self.learning_rate = 0.0003
+        self.nb_epochs = 100
         self.nb_batches = 100
-        self.batch_size = 1000   
+        self.batch_size = 1000  
 
         # dynamic model parameters
         self.alpha = 0.1 # constant ???
         self.loss_constant = 1
         self.controlled_system = True
         self.lyapunov_correction = True
+        
 
         # initialize real system model and modelled system
         if self.model_type == "damped_harmonic_oscillator":
             self.gen = DampedHarmonicOscillatorGenerator(dev=device)
             self.model = DampedHarmonicOscillatorModel(controlled_system=self.controlled_system, 
                                                     lyapunov_correction=self.lyapunov_correction, dev=device)
-        
+        elif self.model_type == "continuous_stirred_tank_reactor":
+            self.gen = ContinuousStirredTankReactorGenerator(dev=device, controlled_system=self.controlled_system)
+            self.model = ContinuousStirredTankReactorModel(controlled_system=self.controlled_system, 
+                                                    lyapunov_correction=self.lyapunov_correction, dev=device)
+
         self.model.to(device)
         self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.learning_rate)
         self.loss_batches = np.zeros((self.nb_epochs*self.nb_batches))
@@ -64,13 +75,19 @@ class LearnDynamics():
             # get all of the data
             X, U, dX_real = self.gen.getData()
 
+            # print(X)
+
             for i in range(self.nb_batches):
                 # forward pass through models
                 dX_X = self.model.forward(X[i,:,:], U[i,:,:]) # output of FCNN if input X (n)
 
+                
+
                 # calc. loss
                 loss = self.loss_function(dX_X, dX_real[i,:,:])
                 self.loss_batches[self.nb_batches*j+i] = loss.item()
+
+                # print(loss)
 
                 # backwards pass through models
                 self.optimizer.zero_grad()
@@ -88,6 +105,9 @@ class LearnDynamics():
 
             self.loss_epochs[j] = np.mean(self.loss_batches[self.nb_batches*j:self.nb_batches*(j+1)])
             print(f"Epoch {j}: Avg. loss = {self.loss_epochs[j]}, lr = {self.learning_rate}")
+
+        # plt.plot(self.loss_batches)
+        # plt.show()
             
         end_time =time.time()
         print(f"\nTotal time = {end_time-start_time}, average time per epoch = {(end_time-start_time)/self.nb_epochs}")
@@ -170,7 +190,7 @@ class LearnDynamics():
         X[:,1] = dx_vector
 
         # define control input
-        U_zero = torch.zeros((X.shape[0],self.gen.M))
+        U_zero = torch.ones((X.shape[0],self.gen.M)) * (self.gen.u_max+self.gen.u_min)/2
         U_max = torch.ones((X.shape[0],self.gen.M)) * self.gen.u_min
 
         fig, axs = plt.subplots(nrows=4, ncols=2, figsize =(12, 12))
@@ -196,7 +216,7 @@ class LearnDynamics():
         ax2.set_title(f"Learning rate: {self.learning_rate}, nb. epochs: {self.nb_epochs}")
         ax2.set_yscale("log")
         ax2.set_xlabel('nb. batches')
-        ax2.set_ylabel('log(loss)')
+        ax2.set_ylabel('loss')
         ax2.plot(self.loss_epochs)
 
     def plotLyapunov(self, ax1, ax2, X, x_range, dx_range):
@@ -239,7 +259,7 @@ class LearnDynamics():
             dX_opt = self.model.forward(X, U)      
 
         # calc. real system dynamics
-        dX_real = self.gen.calc_dX_X(X.cpu(), U)
+        dX_real = self.gen.calc_dX_X(X.cpu(), U.cpu())
 
         ax1.set_title('Real dynamics (dX_real, U='+str(U[0,:].numpy())+')')
         ax1.set_xlabel('x')
@@ -263,7 +283,7 @@ class LearnDynamics():
 def learnSystemDynamics():
     ld = LearnDynamics()
     ld.optimize()
-    ld.printResults()
+    # ld.printResults()
     ld.saveModel()
     ld.plotResults()
 
