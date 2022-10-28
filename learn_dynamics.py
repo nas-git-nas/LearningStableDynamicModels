@@ -36,10 +36,10 @@ class LearnDynamics():
         if self.model_type == "damped_harmonic_oscillator":
             self.learning_rate = 0.01
         elif self.model_type == "continuous_stirred_tank_reactor":
-            self.learning_rate = 0.0003
-        self.nb_epochs = 100
+            self.learning_rate = 0.0005
+        self.nb_epochs = 20
         self.nb_batches = 100
-        self.batch_size = 1000  
+        self.batch_size = 100  
 
         # dynamic model parameters
         self.alpha = 0.1 # constant ???
@@ -56,7 +56,8 @@ class LearnDynamics():
         elif self.model_type == "continuous_stirred_tank_reactor":
             self.gen = ContinuousStirredTankReactorGenerator(dev=device, controlled_system=self.controlled_system)
             self.model = ContinuousStirredTankReactorModel(controlled_system=self.controlled_system, 
-                                                    lyapunov_correction=self.lyapunov_correction, dev=device)
+                                                    lyapunov_correction=self.lyapunov_correction, 
+                                                    generator=self.gen, dev=device)
 
         self.model.to(device)
         self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.learning_rate)
@@ -73,9 +74,10 @@ class LearnDynamics():
         start_time = time.time()
         for j in range(self.nb_epochs):
             # get all of the data
-            X, U, dX_real = self.gen.getData()
+            X, U, dX_real = self.gen.getData(u_map=True)
+            # X, U, dX_real = self.gen.getData()
 
-            # print(X)
+            # print(U)
 
             for i in range(self.nb_batches):
                 # forward pass through models
@@ -175,12 +177,10 @@ class LearnDynamics():
 
         plot_x_min = self.gen.x_min - (self.gen.x_max-self.gen.x_min)/4
         plot_x_max = self.gen.x_max + (self.gen.x_max-self.gen.x_min)/4
-        plot_dx_min = self.gen.dx_min - (self.gen.dx_max-self.gen.dx_min)/4
-        plot_dx_max = self.gen.dx_max + (self.gen.dx_max-self.gen.dx_min)/4
 
         # define range of plot
-        x_range = torch.arange(plot_x_min, plot_x_max+0.1, 0.1).to(device)
-        dx_range = torch.arange(plot_dx_min, plot_dx_max+0.1, 0.1).to(device)
+        x_range = torch.arange(plot_x_min[0], plot_x_max[0]+0.1, 0.1).to(device)
+        dx_range = torch.arange(plot_x_min[1], plot_x_max[1]+0.1, 0.1).to(device)
 
         # create equal distributed state vectors
         x_vector = x_range.tile((dx_range.size(0),))
@@ -189,9 +189,9 @@ class LearnDynamics():
         X[:,0] = x_vector
         X[:,1] = dx_vector
 
-        # define control input
-        U_zero = torch.ones((X.shape[0],self.gen.M)) * (self.gen.u_max+self.gen.u_min)/2
-        U_max = torch.ones((X.shape[0],self.gen.M)) * self.gen.u_min
+        # define control input, u_hat is bounded by [-1,1]
+        U_zero = torch.zeros((X.shape[0],self.gen.M)) - 0.300625
+        U_max = torch.ones((X.shape[0],self.gen.M))
 
         fig, axs = plt.subplots(nrows=4, ncols=2, figsize =(12, 12))
 
@@ -220,13 +220,34 @@ class LearnDynamics():
         ax2.plot(self.loss_epochs)
 
     def plotLyapunov(self, ax1, ax2, X, x_range, dx_range):
+
+
+
+        plot_x_min = [1,-1]
+        plot_x_max = [6,2]
+
+        # define range of plot
+        x_range = torch.arange(plot_x_min[0], plot_x_max[0]+0.1, 0.1).to(device)
+        dx_range = torch.arange(plot_x_min[1], plot_x_max[1]+0.1, 0.1).to(device)
+
+        # create equal distributed state vectors
+        x_vector = x_range.tile((dx_range.size(0),))
+        dx_vector = dx_range.repeat_interleave(x_range.size(0))
+        X = torch.zeros(x_vector.size(0),self.gen.D).to(device)
+        X[:,0] = x_vector
+        X[:,1] = dx_vector
+
         # TODO: plot norm2 of lyapunov ||V||2
 
         # calc. Lyapunov fct. and lyapunov correction f_cor
 
+        # calc. equilibrium point for U=0
+        X_eq = self.gen.calcEquPoint(torch.zeros((X.shape[0],self.gen.M)), U_hat=True)
+        x_eq = X_eq[0,:]
+
         f_X = self.model.forwardFNN(X)
         g_X = self.model.forwardGNN(X) # (N x D x M)
-        V = self.model.forwardLyapunov(X) # (N)
+        V = self.model.forwardLyapunov(X-X_eq) # (N)
         dV = self.model.gradient_lyapunov(X) # (N x D)
         f_cor = self.model.fCorrection(f_X, g_X, V, dV)
 
@@ -234,6 +255,9 @@ class LearnDynamics():
         f_X = f_X.detach().numpy()
         f_cor = f_cor.detach().numpy()
         V = V.detach().numpy()
+
+        
+
 
         X_contour, Y_contour = np.meshgrid(x_range, dx_range)
         Z_contour = np.array(V.reshape(dx_range.size(0),x_range.size(0)))
@@ -244,6 +268,7 @@ class LearnDynamics():
         contours = ax1.contour(X_contour, Y_contour, Z_contour)
         ax1.clabel(contours, inline=1, fontsize=10)
         ax1.set_aspect('equal')
+        ax1.plot(x_eq[0], x_eq[1], marker="o", markeredgecolor="red", markerfacecolor="red")
 
         ax2.set_title('Dynamics correction by Lyapunov fct. (U=[0])')
         ax2.set_xlabel('x')
@@ -259,24 +284,30 @@ class LearnDynamics():
             dX_opt = self.model.forward(X, U)      
 
         # calc. real system dynamics
-        dX_real = self.gen.calc_dX_X(X.cpu(), U.cpu())
+        dX_real = self.gen.calc_dX_X(X.cpu(), U.cpu(), U_hat=True)
 
-        ax1.set_title('Real dynamics (dX_real, U='+str(U[0,:].numpy())+')')
+        # calc. equilibrium point for U
+        x_eq = self.gen.calcEquPoint(U[0,:].reshape(1,self.gen.M), U_hat=True)
+        x_eq = x_eq.reshape(self.gen.D)
+
+        ax1.set_title('Real dynamics (dX_real, U='+str(self.gen.uMapInv(U[0,:]).numpy())+')')
         ax1.set_xlabel('x')
         ax1.set_ylabel('dx')
         ax1.quiver(X[:,0], X[:,1], dX_real[:,0], dX_real[:,1], scale=None)
-        ax1.set_aspect('equal')  
-        rect_training = patches.Rectangle((self.gen.x_min,self.gen.dx_min), width=(self.gen.x_max-self.gen.x_min), \
-                                            height=(self.gen.dx_max-self.gen.dx_min), facecolor='none', edgecolor="g")     
+        ax1.set_aspect('equal')
+        if (x_eq[0]>X[0,0] and x_eq[0]<X[-1,0]) and (x_eq[1]>X[0,1] and x_eq[1]<X[-1,1]):
+            ax1.plot(x_eq[0], x_eq[1], marker="o", markeredgecolor="red", markerfacecolor="red")
+        rect_training = patches.Rectangle((self.gen.x_min[0],self.gen.x_min[1]), width=(self.gen.x_max[0]-self.gen.x_min[0]), \
+                                            height=(self.gen.x_max[1]-self.gen.x_min[1]), facecolor='none', edgecolor="g")     
         ax1.add_patch(rect_training)
 
-        ax2.set_title('Learned dynamics (dX_opt, U='+str(U[0,:].numpy())+')')
+        ax2.set_title('Learned dynamics (dX_opt, U='+str(self.gen.uMapInv(U[0,:]).numpy())+')')
         ax2.set_xlabel('x')
         ax2.set_ylabel('dx')
         ax2.quiver(X[:,0], X[:,1], dX_opt[:,0], dX_opt[:,1], scale=None)
         ax2.set_aspect('equal')
-        rect_training = patches.Rectangle((self.gen.x_min,self.gen.dx_min), width=(self.gen.x_max-self.gen.x_min), \
-                                            height=(self.gen.dx_max-self.gen.dx_min), facecolor='none', edgecolor="g")
+        rect_training = patches.Rectangle((self.gen.x_min[0],self.gen.x_min[1]), width=(self.gen.x_max[0]-self.gen.x_min[0]), \
+                                            height=(self.gen.x_max[1]-self.gen.x_min[1]), facecolor='none', edgecolor="g")   
         ax2.add_patch(rect_training)
 
 

@@ -5,10 +5,11 @@ import matplotlib.pyplot as plt
 import time
 
 class ContinuousStirredTankReactorModel(nn.Module):
-    def __init__(self, controlled_system, lyapunov_correction, dev):
+    def __init__(self, controlled_system, lyapunov_correction, generator, dev):
         super(ContinuousStirredTankReactorModel, self).__init__()
 
         self.device = dev
+        self.gen = generator
 
         # system parameters
         self.controlled_system = controlled_system
@@ -16,7 +17,7 @@ class ContinuousStirredTankReactorModel(nn.Module):
         self.epsilon = 0.01
         self.alpha = 0.1
         self.D = 2 # dim. of state x
-        self.M = 1 # dim. of controll input u
+        self.M = 1 # dim. of controll input u          
 
         # FNN: model parameters
         fnn_input_size = self.D
@@ -79,8 +80,16 @@ class ContinuousStirredTankReactorModel(nn.Module):
         # f_opt is the best approx. of f_X that ensures lyapunov stability (N x D)
         f_opt = f_X
         if self.lyapunov_correction:
+
+            X_eq = self.gen.calcEquPoint(U)
+
+            if np.count_nonzero(np.isnan(X.detach().numpy())) > 0:
+                raise Exception("ERROR: at least one element of X is nan")
+            if np.count_nonzero(np.isnan(X_eq.detach().numpy())) > 0:
+                raise Exception("ERROR: at least one element of X_eq is nan")
+
             # start = time.time()
-            V = self.forwardLyapunov(X) # (N)
+            V = self.forwardLyapunov(X-X_eq) # (N)
             # stop = time.time()
             # print(f"V time = {stop-start}")
 

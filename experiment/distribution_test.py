@@ -1,57 +1,37 @@
 from cProfile import label
 import numpy as np
 import matplotlib.pyplot as plt
+from distribution_lqr_controller import DistributionLQRController
 
 class DistributionTest():
-    def __init__(self):
-        self.field_type = "squared"
-        # self.field_type = "circle"
-
-        self.R = 0.5
+    def __init__(self):      
         
         self.P = 0.1 # cycle periode
-        self.nb_rounds = 1000000
+        self.nb_rounds = 10000000
+        self.counter_max = 100
+        self.counter = 0
         
-
-        
+        self.R = 0.5
         alpha_max = np.pi
         alpha_min = -np.pi
-        self.vel_max = 0.2
-        self.vel_min = -0.2
-        self.dalpha_max = 0.2
-        self.dalpha_min = -0.2
+        vel_max = 0.2
+        vel_min = -0.2
+        dalpha_max = 0.1
+        dalpha_min = -0.1
 
-        self.border = np.ceil(np.max([self.vel_max,self.vel_min])*self.P)
+        self.border = np.max([vel_max,vel_min])*self.P
         pos_max = self.R + self.border
         pos_min = -self.R - self.border
 
-        self.grid = np.array([0.1, 0.1, 0.6, 0.04, 0.04, 0.04]) # x, y, alpha, dx, dy, omega
-        self.state_max = np.array([pos_max, pos_max, alpha_max, self.vel_max, self.vel_max, self.dalpha_max])
-        self.state_min = np.array([pos_min, pos_min, alpha_min, self.vel_min, self.vel_min, self.dalpha_min])
+        self.grid = np.array([0.05, 0.05, 0.2, 0.02, 0.02, 0.02]) # x, y, alpha, dx, dy, omega
+        self.state_max = np.array([pos_max, pos_max, alpha_max, vel_max, vel_max, dalpha_max])
+        self.state_min = np.array([pos_min, pos_min, alpha_min, vel_min, vel_min, dalpha_min])
 
+        self.idx_max = []
         self.idx_max = self._state2idx(self.state_max) + 1
-        self.spacial_field = np.zeros((self.idx_max[0],self.idx_max[1]))
-        self.vel_field = np.zeros((self.idx_max[3],self.idx_max[4]))
-        self.alpha_field = np.zeros((self.idx_max[2]))
-        self.dalpha_field = np.zeros((self.idx_max[5]))
-        
-        # self.grid = 0.1
-        # self.nb_boarder_grids = np.ceil(4*np.max([self.vel_max,self.vel_min])*self.P/self.grid).astype(int)
-        # self.nb_field_grids = np.ceil(2*self.R/self.grid).astype(int)
-        # self.nb_pos_grids = int(self.nb_boarder_grids + self.nb_field_grids + 1)
-        # self.spacial_field = np.zeros((self.nb_pos_grids,self.nb_pos_grids))
 
-        # self.vel_grid = 0.04
-        # self.nb_vel_grids = np.ceil((self.vel_max-self.vel_min)/self.vel_grid + 1).astype(int)
-        # self.vel_field = np.zeros((self.nb_vel_grids,self.nb_vel_grids))
+        self.field = np.zeros((self.idx_max))
 
-        # self.angle_grid = 0.6
-        # self.nb_angle_grids = np.ceil((2*np.pi)/self.angle_grid + 1).astype(int)
-        # self.angle_field = np.zeros((self.nb_angle_grids))
-
-        # self.omega_grid = 0.04
-        # self.nb_omega_grids = np.ceil((self.omega_max-self.omega_min)/self.omega_grid + 1).astype(int)
-        # self.omega_field = np.zeros((self.nb_omega_grids))
 
     def runExperiment(self):
         # init. state and field
@@ -61,88 +41,98 @@ class DistributionTest():
             state = self.updateState(state)
             self.updateField(state)
 
+        self.calcJointProb()
         self.plotField()
 
     def updateState(self, state):
         state = np.copy(state)
-        if self.field_type == "squared":
-            return self.updateSquared(state)
-
-        if self.field_type == "circle":
-            return self.updateCircle(state)
-
-
-    def updateSquared(self, state):
-        state = np.copy(state)
 
         # update position
         new_pos = state[0:3] + self.P*state[3:6]
-        new_pos[2] = self.normalizeAngle(new_pos[2])
+        new_pos[2] = self._normalizeAngle(new_pos[2])
 
         # update velocity
         new_vel = state[3:6]
-        if new_pos[0]>self.R:
-            new_vel[0] = np.random.rand(1)*self.vel_min
-            new_vel[1] = np.random.rand(1)*(self.vel_max-self.vel_min) + self.vel_min
-            new_vel[2] = np.random.rand(1)*(self.dalpha_max-self.dalpha_min) + self.dalpha_min
-        if new_pos[0]<-self.R:
-            new_vel[0] = np.random.rand(1)*self.vel_max
-            new_vel[1] = np.random.rand(1)*(self.vel_max-self.vel_min) + self.vel_min
-            new_vel[2] = np.random.rand(1)*(self.dalpha_max-self.dalpha_min) + self.dalpha_min
-        if new_pos[1]>self.R:
-            new_vel[0] = np.random.rand(1)*(self.vel_max-self.vel_min) + self.vel_min
-            new_vel[1] =  np.random.rand(1)*self.vel_min
-            new_vel[2] = np.random.rand(1)*(self.dalpha_max-self.dalpha_min) + self.dalpha_min
-        if new_pos[1]<-self.R:
-            new_vel[0] = np.random.rand(1)*(self.vel_max-self.vel_min) + self.vel_min
-            new_vel[1] = np.random.rand(1)*self.vel_max
-            new_vel[2] = np.random.rand(1)*(self.dalpha_max-self.dalpha_min) + self.dalpha_min        
+        self.counter -= 1
+        if self.counter <= 0:
+            new_vel[0] = np.random.rand(1)*(self.state_max[3]-self.state_min[3]) + self.state_min[3]
+            new_vel[1] = np.random.rand(1)*(self.state_max[4]-self.state_min[4]) + self.state_min[4]
+            new_vel[2] = np.random.rand(1)*(self.state_max[5]-self.state_min[5]) + self.state_min[5]
+            self.counter = np.random.rand(1)*self.counter_max
+
+        if (new_pos[0]>self.R and new_vel[0]>=0) or (new_pos[0]<-self.R and new_vel[0]<=0):
+            new_vel[0] = -new_vel[0]
+        if (new_pos[1]>self.R and new_vel[1]>=0) or (new_pos[1]<-self.R and new_vel[1]<=0):
+            new_vel[1] = -new_vel[1]            
 
         return np.concatenate((new_pos, new_vel), axis=0)
-
-    def updateCircle(self, state):
-        pass
 
     def updateField(self, state):
         state = np.copy(state)
 
-        idxs = self._state2idx(self.state_max)
+        idxs = self._state2idx(state)
 
-        self.spacial_field[idxs[0], idxs[1]] += 1
-        self.vel_field[idxs[3], idxs[4]] += 1
-        self.alpha_field[idxs[2]] += 1
-        self.dalpha_field[idxs[5]] += 1
+        self.field[tuple(idxs)] += 1
+
+    def calcJointProb(self):
+        
+        dim_name = ['x','y','a','dx','dy','da']
+        axes = np.arange(self.field.ndim)
+        for i in range(0,self.field.ndim):
+            for j in range(i+1,self.field.ndim):
+                axes_ij = tuple(np.delete(axes, (i,j)))
+                field_ij = np.sum(self.field, axis=axes_ij)
+
+                prob_i = np.sum(field_ij, axis=1) / self.nb_rounds
+                prob_j = np.sum(field_ij, axis=0) / self.nb_rounds
+                prob_ij = field_ij / self.nb_rounds
+
+                prob_error =  prob_ij - np.einsum('i,j->ij', prob_i, prob_j)
+                prob_error = np.mean(np.abs(prob_error))
+                print(f"Avg. error p({dim_name[i]},{dim_name[j]}) - p({dim_name[i]})*p({dim_name[j]}) = {prob_error}")
+
 
     def plotField(self):
-        fig, axs = plt.subplots(nrows=2, ncols=2, figsize =(12, 12))
 
-        axs[0,0].set_title(f"Spatial density")
-        axs[0,0].set_xlabel('x')
-        axs[0,0].set_ylabel('y')
-        axs[0,0].set_aspect('equal', 'box')
-        c = axs[0,0].pcolormesh(self.spacial_field, cmap ='Blues', vmin=0, vmax=np.max(self.spacial_field))
-        fig.colorbar(c, ax=axs[0,0])
+        axis = self._axisState()
 
-        axs[0,1].set_title(f"Velocity density")
-        axs[0,1].set_xlabel('dx')
-        axs[0,1].set_ylabel('dy')
-        axs[0,1].set_aspect('equal', 'box')
-        c = axs[0,1].pcolormesh(self.vel_field, cmap ='Reds', vmin=0, vmax=np.max(self.vel_field))
-        fig.colorbar(c, ax=axs[0,1])
+        fig, axs = plt.subplots(nrows=1, ncols=2, figsize =(12, 6))
 
-        axs[1,0].set_title(f"Angular density")
-        axs[1,0].set_xlabel('alpha')
-        axs[1,0].set_ylabel('Nb. events')  
-        axs[1,0].hist(self.alpha_field, bins=self.nb_angle_grids, color="b") 
+        X, Y = np.meshgrid(axis[0], axis[1])
+        Z = np.sum(self.field, axis=(2,3,4,5)) # collapse all dimensions except of x and y
+        axs[0].set_title(f"Spatial density")
+        axs[0].set_xlabel('x')
+        axs[0].set_ylabel('y')
+        axs[0].set_aspect('equal', 'box')
+        c = axs[0].pcolormesh(X, Y, Z, cmap ='Blues', vmin=0, vmax=np.max(Z))
+        fig.colorbar(c, ax=axs[0])
 
-        axs[1,1].set_title(f"Angular velocity density")
-        axs[1,1].set_xlabel('omega')
-        axs[1,1].set_ylabel('Nb. events')  
-        axs[1,1].hist(self.dalpha_field, bins=self.nb_omega_grids, color="r")      
+        X, Y = np.meshgrid(axis[3], axis[4])
+        Z = np.sum(self.field, axis=(0,1,2,5)) # collapse all dimensions except of dx and dy
+        axs[1].set_title(f"Velocity density")
+        axs[1].set_xlabel('dx')
+        axs[1].set_ylabel('dy')
+        axs[1].set_aspect('equal', 'box')
+        c = axs[1].pcolormesh(X, Y, Z, cmap ='Reds', vmin=0, vmax=np.max(Z))
+        fig.colorbar(c, ax=axs[1])
+
+        # x_axis = np.linspace(self.state_min[2], self.state_max[2], num=len(self.alpha_field))
+        # x_axis = x_axis*180/np.pi
+        # axs[1,0].set_title(f"Angular density")
+        # axs[1,0].set_xlabel('alpha [°]')
+        # axs[1,0].set_ylabel('Nb. events')  
+        # axs[1,0].plot(x_axis, self.alpha_field, color="b") 
+
+        # x_axis = np.linspace(self.state_min[5], self.state_max[5], num=len(self.dalpha_field))
+        # x_axis = x_axis*180/np.pi
+        # axs[1,1].set_title(f"Angular velocity density")
+        # axs[1,1].set_xlabel('omega [°/s]')
+        # axs[1,1].set_ylabel('Nb. events')  
+        # axs[1,1].plot(x_axis, self.dalpha_field, color="r")      
 
         plt.show()
 
-    def normalizeAngle(self, angle):
+    def _normalizeAngle(self, angle):
         while angle > np.pi:
             angle -= 2*np.pi
         while angle <= -np.pi:
@@ -152,13 +142,28 @@ class DistributionTest():
     def _state2idx(self, state):
         state = np.copy(state)
 
-        idx = (state - self.state_min)/self.grid
-        return np.round(idx).astype(int)
+        idxs = (state - self.state_min)/self.grid
+        idxs = np.round(idxs).astype(int)
+
+        # if len(self.idx_max) > 0:
+        #     idxs = np.clip(idxs, a_min=0, a_max=self.idx_max-1, dtype=int)
+
+        return idxs
 
     def _idx2state(self, idx):
         idx = np.copy(idx)
 
         return idx*self.grid + self.state_min
+
+    def _axisState(self):
+        x_axis = []
+        for i in range(len(self.state_min)):
+            x_axis.append(np.linspace(self.state_min[i], self.state_max[i], num=self.idx_max[i]))
+
+            if i==2 or i==5:
+                x_axis[i] = x_axis[i]*180/np.pi
+
+        return x_axis
 
 
 
