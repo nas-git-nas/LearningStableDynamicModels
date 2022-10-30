@@ -5,19 +5,25 @@ import matplotlib.pyplot as plt
 import time
 
 class ContinuousStirredTankReactorModel(nn.Module):
-    def __init__(self, controlled_system, lyapunov_correction, generator, dev):
+    def __init__(self, controlled_system, lyapunov_correction, generator, dev, xref):
         super(ContinuousStirredTankReactorModel, self).__init__()
 
         self.device = dev
         self.gen = generator
 
+
+
         # system parameters
         self.controlled_system = controlled_system
         self.lyapunov_correction = lyapunov_correction
         self.epsilon = 0.01
-        self.alpha = 0.1
+        self.alpha = 0.01
         self.D = 2 # dim. of state x
-        self.M = 1 # dim. of controll input u          
+        self.M = 1 # dim. of controll input u      
+
+
+        # reference point
+        self.Xref = xref.clone().detach().reshape(1,self.D).float().to(self.device) # (1,D)
 
         # FNN: model parameters
         fnn_input_size = self.D
@@ -33,7 +39,8 @@ class ContinuousStirredTankReactorModel(nn.Module):
         # ICNN: model parameters
         icnn_input_size = self.D
         icnn_hidden1_size = 60
-        icnn_hidden2_size = 60
+        icnn_hidden2_size = 180
+        icnn_hidden3_size = 30
         icnnn_output_size = 1
 
         # FCNN: layers
@@ -48,11 +55,13 @@ class ContinuousStirredTankReactorModel(nn.Module):
         # ICNN: fully connected layers
         self.icnn_fc1 = nn.Linear(icnn_input_size, icnn_hidden1_size, bias=True)
         self.icnn_fc2 = nn.Linear(icnn_hidden1_size, icnn_hidden2_size, bias=True)
-        self.icnn_fc3 = nn.Linear(icnn_hidden2_size, icnnn_output_size, bias=True)
+        self.icnn_fc3 = nn.Linear(icnn_hidden2_size, icnn_hidden3_size, bias=True)
+        self.icnn_fc4 = nn.Linear(icnn_hidden3_size, icnnn_output_size, bias=True)
 
         # ICNN: input mapping
         self.icnn_im2 = nn.Linear(icnn_input_size, icnn_hidden2_size, bias=False)
-        self.icnn_im3 = nn.Linear(icnn_input_size, icnnn_output_size, bias=False)
+        self.icnn_im3 = nn.Linear(icnn_input_size, icnn_hidden3_size, bias=False)
+        self.icnn_im4 = nn.Linear(icnn_input_size, icnnn_output_size, bias=False)
  
         # activation fcts.
         self.relu = nn.ReLU()
@@ -70,7 +79,7 @@ class ContinuousStirredTankReactorModel(nn.Module):
         Out dX_opt: optimal approx. of state derivative
         """
         # FNN
-        f_X = self.forwardFNN(X)
+        f_X = self.forwardFNN(X) # (N x D)
 
         # GNN
         g_X = None
@@ -81,15 +90,11 @@ class ContinuousStirredTankReactorModel(nn.Module):
         f_opt = f_X
         if self.lyapunov_correction:
 
-            X_eq = self.gen.calcEquPoint(U)
-
             if np.count_nonzero(np.isnan(X.detach().numpy())) > 0:
                 raise Exception("ERROR: at least one element of X is nan")
-            if np.count_nonzero(np.isnan(X_eq.detach().numpy())) > 0:
-                raise Exception("ERROR: at least one element of X_eq is nan")
 
             # start = time.time()
-            V = self.forwardLyapunov(X-X_eq) # (N)
+            V = self.forwardLyapunov(X) # (N)
             # stop = time.time()
             # print(f"V time = {stop-start}")
 
@@ -139,7 +144,7 @@ class ContinuousStirredTankReactorModel(nn.Module):
         """
         self.h_X = self.forwardICNN(X) # (N x 1)
         with torch.no_grad():
-            h_zero = self.forwardICNN(torch.zeros(1,self.D).to(self.device)) # (1 x 1) 
+            h_zero = self.forwardICNN(self.Xref) # (1 x 1) 
         self.h_zero = h_zero.tile(X.shape[0],1) # (N x 1)
 
         V = self.activationLyapunov(self.h_X, self.h_zero) + self.epsilon*torch.einsum('nd,nd->n', X, X) # (N)
@@ -171,7 +176,11 @@ class ContinuousStirredTankReactorModel(nn.Module):
 
         x_icnn_fc3 = self.icnn_fc3(x_icnn_sp2)
         x_icnn_im3 = self.icnn_im3(X)
-        h_X = self.sp(x_icnn_fc3 + x_icnn_im3)
+        x_icnn_sp3 = self.sp(x_icnn_fc3 + x_icnn_im3)
+
+        x_icnn_fc4 = self.icnn_fc4(x_icnn_sp3)
+        x_icnn_im4 = self.icnn_im4(X)
+        h_X = self.sp(x_icnn_fc4 + x_icnn_im4)
 
         return h_X
 
