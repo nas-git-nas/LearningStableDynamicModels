@@ -5,6 +5,7 @@ import cvxpy as cp
 
 from system import DHOSystem, CSTRSystem
 from model import DHOModel, CSTRModel
+from plot import Plot
 
 if torch.cuda.is_available():  
     dev = "cuda:0" 
@@ -44,53 +45,79 @@ class Simulation():
         model_path = "models/DHO/20221103_0822/20221103_0822_model"
         self.model.load_state_dict(torch.load(model_path))
 
-    def simulate(self):
+        # simulation params
+        self.slack_coeff = 1000
+
+        self.plot = Plot(model=self.model, system=self.sys, dev=device)
+
+    def simulation(self):
         # X0 = self.sys.x_min.reshape(1,self.sys.D)
         # U0 = torch.tensor(self.sys.uMap(self.sys.u_min)).reshape(1,self.sys.M)
-        X0 = torch.tensor([0.0, 0.0]).reshape(1,self.sys.D)
-        U0 = torch.tensor([2]).reshape(1,self.sys.M)
-        nb_steps = 250
-        periode = 0.1
+        nb_steps = 150
+        periode = 0.01
+        X0 = np.array([0.0, 0.0])
+        # Udes_seq = np.array([i/100 for i in range(nb_steps)]).reshape(nb_steps,self.sys.M)
+        Udes_seq = np.array([1 for i in range(nb_steps)]).reshape(nb_steps,self.sys.M)
 
-        X_list = [X0]
-        U_list = [U0]
+
+        X_seq_on, Usafe_seq_on, slack_seq_on = self.simSys(nb_steps, periode, X0, Udes_seq, safety_filter=True)
+        X_seq_off, _, _ = self.simSys(nb_steps, periode, X0, Udes_seq, safety_filter=False)
+
+        self.plot.sim(X_seq_on, X_seq_off, Udes_seq, Usafe_seq_on, slack_seq_on)
+
+    def simSys(self, nb_steps, periode, X0, Udes_seq, safety_filter=True):
+        """
+        Simulate system with a given control input sequence
+        Args:
+            nb_steps: number of simulation steps
+            periode: simulation periode
+            X0: starting state at time step 0, numpy array (D)
+            Udes_seq: sequence of desired control inputs, numpy array (nb_steps,M)
+            safety_filter: if True safety filter is active
+        Returns:
+            X_seq: resulting state sequence (nb_steps+1,D)
+            Usafe_seq: resulting control input sequence (nb_steps,M)
+            slack_seq: resulting slacks used in optimization (nb_steps)
+        """
+        X_seq = np.zeros((nb_steps+1, self.sys.D))
+        X_seq[0,:] = X0
+        Usafe_seq = np.zeros((nb_steps, self.sys.M))
+        slack_seq = np.zeros((nb_steps))
+
+        X = X0
         for i in range(nb_steps):
-            # get current values
-            X = X_list[-1]
-            U = U_list[-1]
-            U = torch.tensor([i**2/400000])
-
-            # calc. safe control input and system dynamics
-            U = self.safetyFilter(X, U)
-            dX = self.sys.calcDX(X, U, U_hat=True)
-            X = X + periode*dX #small timestep
+            # calc. safe control input
+            if safety_filter:
+                Usafe, slack = self.safetyFilter(X, Udes_seq[i,:])
+            else:
+                Usafe = Udes_seq[i,:]
+                slack = 0
+            
+            # update state with system dynamicys
+            dX = self.sys.calcDX(torch.tensor(X).reshape(1,self.sys.D), 
+                                 torch.tensor(Usafe).reshape(1,self.sys.M), U_hat=True)
+            X = X + periode*dX.detach().numpy()
 
             # append results
-            X_list.append(X)
-            U_list.append(U)
+            X_seq[i+1,:] = X
+            Usafe_seq[i,:] = Usafe
+            slack_seq[i] = np.sum(slack)
 
-        fig = plt.figure()
-        ax1 = fig.add_axes([0.1, 0.1, 0.8, 0.8])
-        color = plt.cm.rainbow(np.linspace(0, 1, len(X_list)))
-        for i, X in enumerate(X_list):
-            if not i%50:
-                ax1.plot(X[0,0], X[0,1], 'o', color=color[i], label="State "+str(i))
-            else:
-                ax1.plot(X[0,0], X[0,1], 'o', color=color[i])
-            
-        ax1.legend()
-        print(self.xeq)
-        plt.show()
+        return X_seq, Usafe_seq, slack_seq
 
-
-    def safetyFilter(self, X, Udis):
-
-
-        X = X.detach().clone().tile(2,1).float()
-        Udis = Udis.detach().clone().tile(2,1).float()
-
-        # print(f"X = {X}")
-        # print(f"Udis = {Udis}")
+    def safetyFilter(self, X, Udes):
+        """
+        Calc. safe control input by solving optimization problem
+        Args:
+            X: state, array (1,D)
+            Udes: desired control input, array (1,M)
+        Returns:
+            Usafe: safe control input, array (M)
+            slack: slack necessary to make the optimization feasible, scalar
+        """
+        # doublicate X and Udes because model requires N>=2
+        X = torch.tensor(X).reshape(1,self.sys.D).tile(2,1).float()
+        Udes = torch.tensor(Udes).reshape(1,self.sys.M).tile(2,1).float()
 
         # calc. learned system dynamics
         with torch.no_grad():
@@ -101,60 +128,28 @@ class Simulation():
             dV = self.model.gradient_lyapunov(deltaX) # (N x D)
             f_opt = f_X + self.model.fCorrection(f_X, g_X, V, dV)
 
-        # colapse dimension N because N=1 and conver to numpy
+        # colapse dimension N because N=1 and convert tensor to array
         f_X = f_X[0,:].cpu().detach().numpy() # (D)
         g_X = g_X[0,:,:].cpu().detach().numpy() # (D,M)
         V = V[0].cpu().detach().numpy() # (1)
         dV = dV[0,:].cpu().detach().numpy() # (D)
         f_opt = f_opt[0,:].cpu().detach().numpy() # (D)
-        Udis = Udis[0,:].cpu().detach().numpy() # (M)
+        Udes = Udes[0,:].cpu().detach().numpy() # (M)   
 
-        # QP constraints
-        G = np.concatenate((np.einsum('d,dm->m',dV, g_X).reshape(1,self.sys.M), 
-                            np.identity(self.sys.M), 
-                            -np.identity(self.sys.M)), axis=0) # (1+2*M,M)
-        h = np.zeros((1 + 2*self.sys.M)) # (1+2*M)
-        h[0] = - np.einsum('d,d->',dV,f_opt) - self.model.alpha*V
-        h[1:1+self.sys.M] = np.ones((self.sys.M))
-        h[1+self.sys.M:1+2*self.sys.M] = np.ones((self.sys.M))
-        # A = np.zeros((1,self.sys.M)) # (1,M)
-        # b = np.zeros((1)) # (1)
-
-        P = np.identity(self.sys.M)
-        q = Udis
-        slack_coeff = 1000
-
-        # print(f"G = {G}")
-        # print(f"h = {h}")
-        # print(f"P = {P}")
-        # print(f"q = {q}")
-
+        # define optimization variables
         usafe = cp.Variable(self.sys.M)
         slack = cp.Variable(1 + 2*self.sys.M)
 
-        obj = cp.Minimize((1/2)*cp.sum_squares(usafe) - q.T@usafe + slack_coeff*cp.sum(slack))
-        # obj = cp.Minimize((1/2)*cp.quad_form(usafe, P) - q.T@usafe)
-        con = [G @ usafe - slack <= h, slack >= np.zeros((1 + 2*self.sys.M))]
-        # con = [G @ usafe <= h]
-
-        # prob = cp.Problem(cp.Minimize((1/2)*cp.quad_form(usafe, P) + q.T @ usafe), [G @ usafe <= h, A @ usafe == b])
+        # define objective and constraints and solve optimization problem
+        obj = cp.Minimize((1/2)*cp.sum_squares(usafe) - Udes.T@usafe + self.slack_coeff*cp.sum(slack))
+        con = [np.einsum('d,dm->m',dV, g_X).T@usafe + np.einsum('d,d->',dV,f_opt) + self.model.alpha*V <= slack[0], 
+               usafe <= np.ones((self.sys.M)) + slack[1:1+self.sys.M],
+               -usafe <= np.ones((self.sys.M)) + slack[1+self.sys.M:],
+               np.zeros((1 + 2*self.sys.M)) <= slack]
         prob = cp.Problem(obj, con)
         prob.solve()
-
-        # Print result.
-        # print("status:", prob.status)
-        # print("\nThe optimal value is:", prob.value)
-        # print("A solution usafe is")
-        # print("Sol. usafe: {usafe.value}")
-        # print("A dual solution corresponding to the inequality constraints is")
-        # print(prob.constraints[0].dual_value)
-
-        print(f"Udis: {Udis}, Sol. usafe: {usafe.value}, Sol. slack: {slack.value}")
-        # print(f"Sol. usafe: {usafe.value}")
-        Usafe = torch.tensor(usafe.value, dtype=float)
         
-        return Usafe
-
+        return np.array(usafe.value).reshape(self.sys.M), slack.value
 
 
 
@@ -164,7 +159,7 @@ def testSafetyFilter():
     X = torch.tensor([0, 0]).reshape(1,sim.sys.D) #sim.gen.x_min.reshape(1,sim.gen.D)
     U = torch.tensor([1]).reshape(1,sim.sys.M) #sim.gen.uMap(torch.tensor(sim.gen.u_min).reshape(1,sim.gen.M))
     # sim.safetyFilter(X, U)
-    sim.simulate()
+    sim.simulation()
 
 if __name__ == "__main__":
     testSafetyFilter()
