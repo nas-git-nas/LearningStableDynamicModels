@@ -60,7 +60,7 @@ class LearnDynamics():
                                    lyapunov_correction=self.lyapunov_correction, 
                                    generator=self.sys, dev=device, xref=self.xeq)
             
-        model_path = "models/DHO/20221102_2110/20221102_2110_model"
+        model_path = "models/DHO/20221103_0821/20221103_0821_model"
         self.model.load_state_dict(torch.load(model_path))
                                         
 
@@ -181,7 +181,7 @@ class LearnDynamics():
         X[:,1] = dx_vector
 
         # define control input, u_hat is bounded by [-1,1]
-        U_max = torch.ones((X.shape[0],self.sys.M))
+        U_max = torch.ones((X.shape[0],self.sys.M))*-0.5
 
         fig, axs = plt.subplots(nrows=4, ncols=2, figsize =(12, 12))
 
