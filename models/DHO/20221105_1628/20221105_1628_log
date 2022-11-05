@@ -1,0 +1,42 @@
+--name:
+20221105_1628
+
+--model type:
+DHO
+
+--controlled system:
+True
+
+--lyapunov correction:
+True
+
+--learning rate:
+0.01
+
+--number of epoches:
+0
+
+--number of batches:
+1024
+
+--number of samples per batch:
+256
+
+--FNN fc1 weights:
+Parameter containing:
+tensor([[ 1.1473e-08,  1.0000e+00],
+        [-5.0000e-01, -1.0000e-01]], requires_grad=True)
+
+--GNN fc1 weights:
+Parameter containing:
+tensor([[2.6966e-05, 2.5134e-06],
+        [3.5131e-07, 2.4936e-08]], requires_grad=True)
+
+--GNN fc1 bias:
+Parameter containing:
+tensor([-2.3679e-05, -1.0000e+00], requires_grad=True)
+
+--Testing loss:
+tensor(5.5266e-09, grad_fn=<MulBackward0>)
+
+--Training losses:

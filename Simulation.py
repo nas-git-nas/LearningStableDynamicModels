@@ -16,7 +16,7 @@ device = torch.device(dev)
 class Simulation():
     def __init__(self):
         # system type
-        self.model_type = "DHO"        
+        self.model_type = "CSTR"        
         self.controlled_system = True 
         self.lyapunov_correction = True
 
@@ -27,9 +27,12 @@ class Simulation():
             self.sys = CSTRSystem(dev=device, controlled_system=self.controlled_system)
 
         # calc. equilibrium point
-        self.ueq = torch.tensor([0])  #torch.tensor([14.19]) 
+        self.ueq = torch.tensor([14.19])  #torch.tensor([0]) 
         self.xeq = self.sys.equPoint(self.ueq, U_hat=False)
         self.ueq = self.sys.uMap(self.ueq) # ueq_hat -> ueq=14.19
+
+        print(f"for u=-0.5 xeq={self.sys.equPoint(torch.tensor([-0.5]), U_hat=True)}")
+
 
         # init. model
         if self.model_type == "DHO":
@@ -42,22 +45,23 @@ class Simulation():
                                    generator=self.sys, dev=device, xref=self.xeq)
 
 
-        model_path = "models/DHO/20221103_0822/20221103_0822_model"
+        # model_path = "models/DHO/20221103_0822/20221103_0822_model"
+        model_path = "models/CSTR/20221105_1832/20221105_1832_model"
         self.model.load_state_dict(torch.load(model_path))
 
         # simulation params
-        self.slack_coeff = 1000
+        self.slack_coeff = 100000
 
         self.plot = Plot(model=self.model, system=self.sys, dev=device)
 
     def simulation(self):
         # X0 = self.sys.x_min.reshape(1,self.sys.D)
         # U0 = torch.tensor(self.sys.uMap(self.sys.u_min)).reshape(1,self.sys.M)
-        nb_steps = 150
+        nb_steps = 500
         periode = 0.01
-        X0 = np.array([0.0, 0.0])
+        X0 = np.array([2.14, 1.06]) # np.array([0.0, 0.0])
         # Udes_seq = np.array([i/100 for i in range(nb_steps)]).reshape(nb_steps,self.sys.M)
-        Udes_seq = np.array([1 for i in range(nb_steps)]).reshape(nb_steps,self.sys.M)
+        Udes_seq = np.array([-1 for i in range(nb_steps)]).reshape(nb_steps,self.sys.M)
 
 
         X_seq_on, Usafe_seq_on, slack_seq_on = self.simSys(nb_steps, periode, X0, Udes_seq, safety_filter=True)

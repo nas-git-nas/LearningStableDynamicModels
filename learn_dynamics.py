@@ -23,7 +23,7 @@ device = torch.device(dev)
 class LearnDynamics():
     def __init__(self):
         # system type
-        self.model_type = "DHO"
+        self.model_type = "CSTR"
         self.controlled_system = True
         self.lyapunov_correction = True 
 
@@ -35,7 +35,7 @@ class LearnDynamics():
         
         # neural network parameters
         self.learning_rate = 0.01
-        self.nb_epochs = 20
+        self.nb_epochs = 60
         self.nb_batches = 1024
         self.batch_size = 256  
 
@@ -46,7 +46,7 @@ class LearnDynamics():
             self.sys = CSTRSystem(dev=device, controlled_system=self.controlled_system)
         
         # calc. equilibrium point
-        self.ueq = torch.tensor([0])  #torch.tensor([14.19]) 
+        self.ueq = torch.tensor([14.19])  #torch.tensor([0]) 
         self.xeq = self.sys.equPoint(self.ueq, U_hat=False)
         self.ueq = self.sys.uMap(self.ueq) # ueq_hat -> ueq=14.19
 
@@ -60,7 +60,8 @@ class LearnDynamics():
                                    lyapunov_correction=self.lyapunov_correction, 
                                    generator=self.sys, dev=device, xref=self.xeq)
             
-        model_path = "models/DHO/20221103_0821/20221103_0821_model"
+        # model_path = "models/DHO/20221103_0822/20221103_0822_model"
+        model_path = "models/CSTR/20221105_1816/20221105_1816_model"
         self.model.load_state_dict(torch.load(model_path))
                                         
 
@@ -103,7 +104,7 @@ class LearnDynamics():
             print(f"Epoch {j}: Avg. loss = {self.loss_epochs[j]}, lr = {self.learning_rate}")
             
         end_time =time.time()
-        print(f"\nTotal time = {end_time-start_time}, average time per epoch = {(end_time-start_time)/self.nb_epochs}")
+        # print(f"\nTotal time = {end_time-start_time}, average time per epoch = {(end_time-start_time)/self.nb_epochs}")
 
     def loss_function(self, dX_X, dX_real):
         """
@@ -181,9 +182,9 @@ class LearnDynamics():
         X[:,1] = dx_vector
 
         # define control input, u_hat is bounded by [-1,1]
-        U_max = torch.ones((X.shape[0],self.sys.M))*-0.5
+        U_max = torch.ones((X.shape[0],self.sys.M)) #*-0.5
 
-        fig, axs = plt.subplots(nrows=4, ncols=2, figsize =(12, 12))
+        fig, axs = plt.subplots(nrows=4, ncols=2, figsize =(10, 18))
 
         self.plotLoss(axs[0,0], axs[0,1])
         if self.lyapunov_correction:
@@ -227,8 +228,8 @@ class LearnDynamics():
         Z_contour = np.array(V.reshape(dx_range.size(0),x_range.size(0)))
         
         ax1.set_title('Lyapunov fct. (V)')
-        ax1.set_xlabel('x')
-        ax1.set_ylabel('dx')
+        ax1.set_xlabel('x[0]')
+        ax1.set_ylabel('x[1]')
         contours = ax1.contour(X_contour, Y_contour, Z_contour)
         ax1.clabel(contours, inline=1, fontsize=10)
         ax1.set_aspect('equal')
@@ -244,9 +245,9 @@ class LearnDynamics():
         # ax1.clabel(contours, inline=1, fontsize=10)
         # ax1.set_aspect('equal')
 
-        ax2.set_title('Dynamics correction by Lyapunov fct. (U=[14.19])')
-        ax2.set_xlabel('x')
-        ax2.set_ylabel('dx')
+        ax2.set_title('Dynamics correction by Lyapunov fct.')
+        ax2.set_xlabel('x[0]')
+        ax2.set_ylabel('x[1]')
         ax2.quiver(X[:,0], X[:,1], f_X[:,0], f_X[:,1], color="b", scale=self.quiver_scale)
         ax2.quiver(X[:,0], X[:,1], f_cor[:,0], f_cor[:,1], color="r", scale=self.quiver_scale)
         ax2.set_aspect('equal')
@@ -265,9 +266,9 @@ class LearnDynamics():
         x_eq = self.sys.equPoint(U[0], U_hat=True)
         x_eq = x_eq.reshape(self.sys.D)
 
-        ax1.set_title('Real dynamics (dX_real, U='+str(self.sys.uMapInv(U[0,:]).numpy())+')')
-        ax1.set_xlabel('x')
-        ax1.set_ylabel('dx')
+        ax1.set_title('Real dynamics (U='+str(self.sys.uMapInv(U[0,:]).numpy())+')')
+        ax1.set_xlabel('x[0]')
+        ax1.set_ylabel('x[1]')
         ax1.quiver(X[:,0], X[:,1], dX_real[:,0], dX_real[:,1], scale=self.quiver_scale)
         ax1.set_aspect('equal')
         if (x_eq[0]>X[0,0] and x_eq[0]<X[-1,0]) and (x_eq[1]>X[0,1] and x_eq[1]<X[-1,1]):
@@ -276,9 +277,9 @@ class LearnDynamics():
                                             height=(self.sys.x_max[1]-self.sys.x_min[1]), facecolor='none', edgecolor="g")     
         ax1.add_patch(rect_training)
 
-        ax2.set_title('Learned dynamics (dX_opt, U='+str(self.sys.uMapInv(U[0,:]).numpy())+')')
-        ax2.set_xlabel('x')
-        ax2.set_ylabel('dx')
+        ax2.set_title('Learned dynamics (U='+str(self.sys.uMapInv(U[0,:]).numpy())+')')
+        ax2.set_xlabel('x[0]')
+        ax2.set_ylabel('x[1]')
         ax2.quiver(X[:,0], X[:,1], dX_opt[:,0], dX_opt[:,1], scale=self.quiver_scale)
         ax2.set_aspect('equal')
         rect_training = patches.Rectangle((self.sys.x_min[0],self.sys.x_min[1]), width=(self.sys.x_max[0]-self.sys.x_min[0]), \

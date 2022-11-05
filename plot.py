@@ -31,7 +31,8 @@ class Plot():
 
         contours = axis.contour(X_contour, Y_contour, Z_contour, colors='black', label="Lyapunov fct.")
         axis.clabel(contours, inline=1, fontsize=10)
-        axis.plot(self.model.Xref[0,0], self.model.Xref[0,1], marker="o", markeredgecolor="red", markerfacecolor="red")
+        axis.plot(self.model.Xref[0,0], self.model.Xref[0,1], marker=(5, 1), markeredgecolor="black", markerfacecolor="black")
+        axis.legend()
         
         if add_title:
             axis.set_title('Lyapunov fct. (V)')
@@ -52,17 +53,17 @@ class Plot():
         """
         nb_steps = Udes_seq.shape[0]
 
-        fig, axs = plt.subplots(nrows=2, ncols=2, figsize =(10, 10))
+        fig, axs = plt.subplots(nrows=2, ncols=2, figsize =(9, 9))
 
-        xmin = np.min(X_seq_off, axis=0)
-        xmax = np.max(X_seq_off, axis=0)
+        xmin = np.minimum(np.min(X_seq_off, axis=0), np.min(X_seq_on, axis=0))
+        xmax = np.maximum(np.max(X_seq_off, axis=0), np.max(X_seq_on, axis=0))
         xmin -= (xmax-xmin)/6
         xmax += (xmax-xmin)/6
         
         self.simControlInput(axs[0,0], Udes_seq, Usafe_seq_on)
         self.simSlack(axs[0,1], slack_seq_on)
-        self.simTrajectory(axs[1,0], X_seq_on, nb_steps, xmin, xmax, filter_on=True)
         self.modelLyap(axs[1,0], xmin, xmax, add_title=False)
+        self.simTrajectory(axs[1,0], X_seq_on, nb_steps, xmin, xmax, filter_on=True)
         self.simTrajectory(axs[1,1], X_seq_off, nb_steps, xmin, xmax, filter_on=False)
 
         plt.show()
@@ -83,7 +84,8 @@ class Plot():
             if not i%(nb_steps/5):
                 axis.plot(X_seq[i+1,0], X_seq[i+1,1], 'o', color=color[i], label="Iter. "+str(i))
             else:
-                axis.plot(X_seq[i+1,0], X_seq[i+1,1], 'o', color=color[i])           
+                axis.plot(X_seq[i+1,0], X_seq[i+1,1], 'o', color=color[i])  
+          
         axis.legend()
         axis.set_xlim([xmin[0], xmax[0]])
         axis.set_ylim([xmin[1], xmax[1]])
