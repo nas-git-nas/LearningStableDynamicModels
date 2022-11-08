@@ -16,7 +16,7 @@ device = torch.device(dev)
 class Simulation():
     def __init__(self):
         # system type
-        self.model_type = "CSTR"        
+        self.model_type = "DHO"        
         self.controlled_system = True 
         self.lyapunov_correction = True
 
@@ -27,11 +27,12 @@ class Simulation():
             self.sys = CSTRSystem(dev=device, controlled_system=self.controlled_system)
 
         # calc. equilibrium point
-        self.ueq = torch.tensor([14.19])  #torch.tensor([0]) 
+        # self.ueq = torch.tensor([14.19])
+        self.ueq = torch.tensor([0]) 
         self.xeq = self.sys.equPoint(self.ueq, U_hat=False)
         self.ueq = self.sys.uMap(self.ueq) # ueq_hat -> ueq=14.19
 
-        print(f"for u=-0.5 xeq={self.sys.equPoint(torch.tensor([-0.5]), U_hat=True)}")
+        # print(f"for u=-0.5 xeq={self.sys.equPoint(torch.tensor([-0.5]), U_hat=True)}")
 
 
         # init. model
@@ -45,29 +46,28 @@ class Simulation():
                                    generator=self.sys, dev=device, xref=self.xeq)
 
 
-        # model_path = "models/DHO/20221103_0822/20221103_0822_model"
-        model_path = "models/CSTR/20221105_1832/20221105_1832_model"
+        model_path = "models/DHO/20221103_0822/20221103_0822_model"
         self.model.load_state_dict(torch.load(model_path))
 
         # simulation params
-        self.slack_coeff = 100000
+        self.slack_coeff = 1000
 
         self.plot = Plot(model=self.model, system=self.sys, dev=device)
 
     def simulation(self):
         # X0 = self.sys.x_min.reshape(1,self.sys.D)
         # U0 = torch.tensor(self.sys.uMap(self.sys.u_min)).reshape(1,self.sys.M)
-        nb_steps = 500
+        nb_steps = 1200
         periode = 0.01
-        X0 = np.array([2.14, 1.06]) # np.array([0.0, 0.0])
+        X0 = self.xeq.detach().numpy()
         # Udes_seq = np.array([i/100 for i in range(nb_steps)]).reshape(nb_steps,self.sys.M)
-        Udes_seq = np.array([-1 for i in range(nb_steps)]).reshape(nb_steps,self.sys.M)
+        Udes_seq = np.array([1 for i in range(nb_steps)]).reshape(nb_steps,self.sys.M)
 
 
-        X_seq_on, Usafe_seq_on, slack_seq_on = self.simSys(nb_steps, periode, X0, Udes_seq, safety_filter=True)
-        X_seq_off, _, _ = self.simSys(nb_steps, periode, X0, Udes_seq, safety_filter=False)
+        X_seq_on, Usafe_seq_on, slack_seq_on, V_seq_on = self.simSys(nb_steps, periode, X0, Udes_seq, safety_filter=True)
+        X_seq_off, _, _, _ = self.simSys(nb_steps, periode, X0, Udes_seq, safety_filter=False)
 
-        self.plot.sim(X_seq_on, X_seq_off, Udes_seq, Usafe_seq_on, slack_seq_on)
+        self.plot.sim(X_seq_on, X_seq_off, Udes_seq, Usafe_seq_on, slack_seq_on, V_seq_on)
 
     def simSys(self, nb_steps, periode, X0, Udes_seq, safety_filter=True):
         """
@@ -87,15 +87,17 @@ class Simulation():
         X_seq[0,:] = X0
         Usafe_seq = np.zeros((nb_steps, self.sys.M))
         slack_seq = np.zeros((nb_steps))
+        V_seq = np.zeros((nb_steps))
 
         X = X0
         for i in range(nb_steps):
             # calc. safe control input
             if safety_filter:
-                Usafe, slack = self.safetyFilter(X, Udes_seq[i,:])
+                Usafe, slack, V = self.safetyFilter(X, Udes_seq[i,:])
             else:
                 Usafe = Udes_seq[i,:]
                 slack = 0
+                V = 0
             
             # update state with system dynamicys
             dX = self.sys.calcDX(torch.tensor(X).reshape(1,self.sys.D), 
@@ -106,8 +108,12 @@ class Simulation():
             X_seq[i+1,:] = X
             Usafe_seq[i,:] = Usafe
             slack_seq[i] = np.sum(slack)
+            V_seq[i] = V
 
-        return X_seq, Usafe_seq, slack_seq
+            # add plot gradV.T@dX, must be smaller than zero
+            # slack von u wegnehemen
+
+        return X_seq, Usafe_seq, slack_seq, V_seq
 
     def safetyFilter(self, X, Udes):
         """
@@ -153,7 +159,7 @@ class Simulation():
         prob = cp.Problem(obj, con)
         prob.solve()
         
-        return np.array(usafe.value).reshape(self.sys.M), slack.value
+        return np.array(usafe.value).reshape(self.sys.M), slack.value, V
 
 
 

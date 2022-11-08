@@ -35,9 +35,9 @@ class LearnDynamics():
         
         # neural network parameters
         self.learning_rate = 0.01
-        self.nb_epochs = 60
+        self.nb_epochs = 50
         self.nb_batches = 1024
-        self.batch_size = 256  
+        self.batch_size = 512 
 
         # initialize system
         if self.model_type == "DHO":
@@ -61,7 +61,7 @@ class LearnDynamics():
                                    generator=self.sys, dev=device, xref=self.xeq)
             
         # model_path = "models/DHO/20221103_0822/20221103_0822_model"
-        model_path = "models/CSTR/20221105_1816/20221105_1816_model"
+        model_path = "models/CSTR/20221106_1040/20221106_1040_model"
         self.model.load_state_dict(torch.load(model_path))
                                         
 

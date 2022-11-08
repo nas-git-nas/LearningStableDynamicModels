@@ -31,17 +31,17 @@ class Plot():
 
         contours = axis.contour(X_contour, Y_contour, Z_contour, colors='black', label="Lyapunov fct.")
         axis.clabel(contours, inline=1, fontsize=10)
-        axis.plot(self.model.Xref[0,0], self.model.Xref[0,1], marker=(5, 1), markeredgecolor="black", markerfacecolor="black")
-        axis.legend()
+        axis.plot(self.model.Xref[0,0], self.model.Xref[0,1], marker=(5, 1), markeredgecolor="black", markerfacecolor="black")   
         
         if add_title:
             axis.set_title('Lyapunov fct. (V)')
             axis.set_xlabel('x0')
             axis.set_ylabel('x1')
             axis.set_aspect('equal')
+            axis.legend()
         
 
-    def sim(self, X_seq_on, X_seq_off, Udes_seq, Usafe_seq_on, slack_seq_on):
+    def sim(self, X_seq_on, X_seq_off, Udes_seq, Usafe_seq_on, slack_seq_on, V_seq_on):
         """
         Plot simulation
         Args:
@@ -53,7 +53,7 @@ class Plot():
         """
         nb_steps = Udes_seq.shape[0]
 
-        fig, axs = plt.subplots(nrows=2, ncols=2, figsize =(9, 9))
+        fig, axs = plt.subplots(nrows=2, ncols=3, figsize =(9, 9))
 
         xmin = np.minimum(np.min(X_seq_off, axis=0), np.min(X_seq_on, axis=0))
         xmax = np.maximum(np.max(X_seq_off, axis=0), np.max(X_seq_on, axis=0))
@@ -61,10 +61,16 @@ class Plot():
         xmax += (xmax-xmin)/6
         
         self.simControlInput(axs[0,0], Udes_seq, Usafe_seq_on)
-        self.simSlack(axs[0,1], slack_seq_on)
-        self.modelLyap(axs[1,0], xmin, xmax, add_title=False)
-        self.simTrajectory(axs[1,0], X_seq_on, nb_steps, xmin, xmax, filter_on=True)
-        self.simTrajectory(axs[1,1], X_seq_off, nb_steps, xmin, xmax, filter_on=False)
+        self.simSlack(axs[0,1], slack_seq_on)        
+        self.simTrajectory(axs[1,0], X_seq_off, nb_steps, xmin, xmax, filter_on=False)
+        self.simTrajectory(axs[1,1], X_seq_on, nb_steps, xmin, xmax, filter_on=True)
+        self.modelLyap(axs[1,1], xmin, xmax, add_title=False)
+
+        axs[1,2].set_title(f"V(x) on trajectory")
+        axs[1,2].set_xlabel('V(x)')
+        axs[1,2].set_ylabel('timestep')
+        axs[1,2].plot(V_seq_on)
+
 
         plt.show()
 
@@ -82,7 +88,7 @@ class Plot():
         color = plt.cm.rainbow(np.linspace(0, 1, nb_steps))
         for i in range(nb_steps):
             if not i%(nb_steps/5):
-                axis.plot(X_seq[i+1,0], X_seq[i+1,1], 'o', color=color[i], label="Iter. "+str(i))
+                axis.plot(X_seq[i+1,0], X_seq[i+1,1], 'o', color=color[i], label="t = "+str(i))
             else:
                 axis.plot(X_seq[i+1,0], X_seq[i+1,1], 'o', color=color[i])  
           
@@ -92,9 +98,9 @@ class Plot():
         axis.set_xlabel('x[0]')
         axis.set_ylabel('x[1]')
         if filter_on:
-            axis.set_title(f"State sequence (safety filter on)")
+            axis.set_title(f"Trajectory: safety filter on")
         else:
-            axis.set_title(f"State sequence (safety filter off)")
+            axis.set_title(f"Trajectory: safety filter off")
 
     def simControlInput(self, axis, Udes_seq, Usafe_seq):
         """
@@ -108,7 +114,7 @@ class Plot():
         axis.plot(x_axis, Udes_seq, color="b", label="U desired")
         axis.plot(x_axis, Usafe_seq, color="g", label="U safe")
         axis.legend()
-        axis.set_xlabel('Iteration')
+        axis.set_xlabel('Time step')
         axis.set_ylabel('control input')
         axis.set_title(f"Control sequence")
         
@@ -122,7 +128,7 @@ class Plot():
         x_axis = np.arange(len(slack_seq))
         axis.plot(x_axis, slack_seq, linestyle='dashed', color="r", label="Sum of slack vector")
         axis.legend()
-        axis.set_xlabel('Iteration')
+        axis.set_xlabel('Time step')
         axis.set_title(f"Optimization slack")
         
     
