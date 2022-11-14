@@ -9,22 +9,21 @@ from scipy import interpolate
 
 class Preprocess():
     def __init__(self) -> None:
-
+        # experiment
         self.series = "holohover_20221025"
+        self.D = 6
+        self.M = 6
+
+        # testing
+        self.keep_nb_rows = "all"
+
+        # data
         self.x = {}
         self.dx = {}
         self.ddx = {}
         self.tx = {}
         self.u = {}
         self.tu = {}
-
-        self.D = 6
-        self.M = 6
-
-
-        # testing
-        self.keep_nb_rows = "all"
-
 
     def loadData(self):
         """
@@ -61,6 +60,27 @@ class Preprocess():
                                                     usecols=[1], dtype=float, skip_footer=skip_footer)
                     self.u[root] = np.genfromtxt(   os.path.join(root, f), delimiter=",", skip_header=1, 
                                                     usecols=[2,3,4,5,6,7], dtype=float, skip_footer=skip_footer)
+
+    def saveData(self):
+        """
+        Save state and control input vectors in csv file
+            state: [x, y, theta, dx, dy, dtheta], (N, D)
+            u: [u1, ..., u6], (N, M)
+        """
+        X = np.empty((0,self.D))
+        dX = np.empty((0,self.D))
+        U = np.empty((0,self.M))
+        for exp in self.tx:
+            Xnew = np.concatenate((self.x[exp], self.dx[exp]), axis=1)
+            dXnew = np.concatenate((self.dx[exp], self.ddx[exp]), axis=1)
+
+            X = np.concatenate((X, Xnew), axis=0)
+            dX = np.concatenate((dX, dXnew), axis=0)
+            U = np.concatenate((U, self.u[exp]), axis=0)
+
+        np.savetxt(os.path.join("experiment", self.series, "data_state.csv"), X, delimiter=",")
+        np.savetxt(os.path.join("experiment", self.series, "data_dynamics.csv"), dX, delimiter=",")
+        np.savetxt(os.path.join("experiment", self.series, "data_input.csv"), U, delimiter=",")
     
     def stamp2seconds(self):
         """¨
@@ -119,10 +139,8 @@ class Preprocess():
             # ensure that min(tu)<min(tx) and max(tx)<max(tu) s.t. range(tu) is larger than range(tx)
             # this is necessary because u is intermolated to match x
             while self.tu[exp][lower_u_idx] > self.tx[exp][lower_x_idx]:
-                print(f"tu[{lower_u_idx}]: {self.tu[exp][lower_u_idx]}, tx[{lower_x_idx}]: {self.tx[exp][lower_x_idx]}")
                 lower_x_idx += 1
             while self.tu[exp][upper_u_idx] < self.tx[exp][upper_x_idx]:
-                print(f"tu[{upper_u_idx}]: {self.tu[exp][upper_u_idx]}, tx[{upper_x_idx}]: {self.tx[exp][upper_x_idx]}")
                 upper_x_idx -= 1
 
             if plot:
@@ -131,43 +149,15 @@ class Preprocess():
                 plt.vlines(self.tx[exp][upper_x_idx], ymin=-3.3, ymax=3.3, colors="r")
                 plt.show()
 
-            self.x[exp] = self.x[exp][lower_x_idx:upper_x_idx,:]
-            self.tx[exp] = self.tx[exp][lower_x_idx:upper_x_idx]
-            self.u[exp] = self.u[exp][lower_u_idx:upper_u_idx,:]
-            self.tu[exp] = self.tu[exp][lower_u_idx:upper_u_idx]
-
-            print(f"tu min: {self.tu[exp][0]}, tx min: {self.tx[exp][0]}")
-            print(f"tu max: {self.tu[exp][-1]}, tx max: {self.tx[exp][-1]}")
-            return
-
-
-    def diffPosition(self, plot=False):
-        """
-        Calc. smooth derivatives from x to get dx and ddx
-        """
-        # fd = SmoothedFiniteDifference(d=1, axis=0, smoother_kws={'window_length': 1000})
-        fd = SINDyDerivative(d=1, kind="savitzky_golay", left=0.5, right=0.5, order=3)
-        fd2 = SINDyDerivative(d=2, kind="savitzky_golay", left=0.5, right=0.5, order=3)
-        for exp in self.x:
-            self.dx[exp] = fd._differentiate(self.x[exp], self.tx[exp])
-            self.ddx[exp] = fd._differentiate(self.dx[exp], self.tx[exp])
-
-            if plot:
-                fig, axs = plt.subplots(nrows=self.x[exp].shape[1], figsize =(8, 8))             
-                for i, ax in enumerate(axs):
-                    ax.plot(self.tx[exp], self.x[exp][:,i], color="b", label="pos")
-                    ax.plot(self.tx[exp], self.dx[exp][:,i], color="g", label="vel")
-                    ax.plot(self.tx[exp], self.ddx[exp][:,i], color="r", label="acc")
-                    ax.set_ylim([np.min(self.ddx[exp][:,i]), np.max(self.ddx[exp][:,i])])
-                    ax.legend()
-                    ax.set_title(f"Dimension {i}")
-                plt.show()
+            self.x[exp] = self.x[exp][lower_x_idx:upper_x_idx+1,:]
+            self.tx[exp] = self.tx[exp][lower_x_idx:upper_x_idx+1]
+            self.u[exp] = self.u[exp][lower_u_idx:upper_u_idx+1,:]
+            self.tu[exp] = self.tu[exp][lower_u_idx:upper_u_idx+1]
 
     def intermolateU(self, plot=False):
         """
         Polynomial interpolation of control input to match with x
         """
-
         for exp in self.u:
             print(f"tu min: {self.tu[exp][0]}, tx min: {self.tx[exp][0]}")
             print(f"tu max: {self.tu[exp][-1]}, tx max: {self.tx[exp][-1]}")
@@ -178,28 +168,79 @@ class Preprocess():
             if plot:
                 fig, axs = plt.subplots(nrows=self.u[exp].shape[1], figsize =(8, 8))             
                 for i, ax in enumerate(axs):
-                    ax.plot(self.tx[exp], self.u[exp][:,i], color="b", label="u")
-                    ax.plot(self.tx[exp], u_inter, '--', color="r", label="u inter.")
+                    ax.plot(self.tu[exp], self.u[exp][:,i], color="b", label="u")
+                    ax.plot(self.tx[exp], u_inter[:,i], '--', color="r", label="u inter.")
                     ax.legend()
                     ax.set_title(f"Control input {i}")
                 plt.show()
 
             self.u[exp] = u_inter
             self.tu[exp] = [] # not used anymore
+
+    def diffPosition(self, plot=False):
+        """
+        Calc. smooth derivatives from x to get dx and ddx
+        """
+        # fd = SmoothedFiniteDifference(d=1, axis=0, smoother_kws={'window_length': 1000})
+        fd = SINDyDerivative(d=1, kind="savitzky_golay", left=0.5, right=0.5, order=3)
+        for exp in self.x:
+            self.dx[exp] = fd._differentiate(self.x[exp], self.tx[exp])
+            self.ddx[exp] = fd._differentiate(self.dx[exp], self.tx[exp])
+
+            if plot:
+                fig, axs = plt.subplots(nrows=self.x[exp].shape[1], ncols=2, figsize =(8, 8))             
+                for i, ax in enumerate(axs[:,0]):
+                    ax.plot(self.tx[exp], self.x[exp][:,i], color="b", label="pos")
+                    ax.plot(self.tx[exp], self.dx[exp][:,i], color="g", label="vel")
+                    ax.plot(self.tx[exp], self.ddx[exp][:,i], color="r", label="acc")
+                    ax.set_ylim([np.min(self.ddx[exp][:,i]), np.max(self.ddx[exp][:,i])])
+                    ax.legend()
+                    ax.set_title(f"Dimension {i}")
+
+                # integrate dx and calc. error
+                d_error = self.integrate(self.dx[exp], self.tx[exp], self.x[exp][0,:])
+                d_error = d_error - self.x[exp]
+
+                # double integrate ddx and calc. error
+                dd_error = self.integrate(self.ddx[exp], self.tx[exp], self.dx[exp][0,:])
+                dd_error = self.integrate(dd_error, self.tx[exp], self.x[exp][0,:])
+                dd_error = dd_error - self.x[exp]
+
+                for i, ax in enumerate(axs[:,1]):
+                    ax.plot(self.tx[exp], d_error[:,i], color="g", label="dx error")
+                    ax.plot(self.tx[exp], dd_error[:,i], color="r", label="ddx error")
+                    ax.legend()
+                    ax.set_title(f"Dimension {i}")                    
+
+                plt.show()
+
+    def integrate(self, dX, tX, X0):
+        """
+        Integrate dX
+        Args:
+            dX: derivative of X, (N, D)
+            tX: time in seconds of X, (N)
+            X0: initial condition of X, (D)
+        Returns:
+            X: integration of dX (N, D)
+        """
+        dX = np.copy(dX)
+        X = np.zeros(dX.shape)
+        X[0,:] = X0
+        for i in range(1,dX.shape[0]):
+            X[i,:] = X[i-1,:] + dX[i,:]*(tX[i]-tX[i-1])
+        
+        return X
             
-
-
-
-
 
 def main():
     pp = Preprocess()
     pp.loadData()
     pp.stamp2seconds()
     pp.cropData(plot=False)
-    # pp.diffPosition(plot=True)
     pp.intermolateU(plot=False)
-
+    pp.diffPosition(plot=False)
+    pp.saveData()
 
 if __name__ == "__main__":
     main()
