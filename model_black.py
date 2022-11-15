@@ -2,9 +2,9 @@ from abc import abstractmethod
 import torch
 import torch.nn as nn
 
-class Model(nn.Module):
+class ModelBlack(nn.Module):
     def __init__(self, controlled_system, lyapunov_correction, generator, dev, xref):
-        super(Model, self).__init__()
+        super(ModelBlack, self).__init__()
 
         self.device = dev
         self.sys = generator
@@ -125,10 +125,54 @@ class Model(nn.Module):
 
         return -torch.einsum('nd,n->nd', dV_norm, self.relu(stability_conditions))
 
-
-class CSTRModel(Model):
+class HolohoverModelBlack(ModelBlack):
     def __init__(self, controlled_system, lyapunov_correction, generator, dev, xref):
-        Model.__init__(self, controlled_system, lyapunov_correction, generator, dev, xref)
+        ModelBlack.__init__(self, controlled_system, lyapunov_correction, generator, dev, xref)
+
+        # system parameters
+        self.epsilon = 0.00001
+        self.alpha = 0.05
+        self.D = 6 # dim. of state x
+        self.M = 6 # dim. of controll input u      
+
+        # FNN: model parameters
+        fnn_input_size = self.D
+        fnn_hidden1_size = 80
+        fnn_hidden2_size = 200
+        fnn_output_size = self.D
+
+        # GNN: model parameters
+        gnn_input_size = self.D
+        gnn_output_size = self.D*self.M # D*M (dim. of X times dim. of U)
+
+        # ICNN: model parameters
+        icnn_input_size = self.D
+        icnn_hidden1_size = 60
+        icnn_hidden2_size = 60
+        icnn_hidden3_size = 30
+        icnnn_output_size = 1
+
+        # FCNN: layers
+        self.fnn_fc1 = nn.Linear(fnn_input_size, fnn_hidden1_size, bias=True)
+        self.fnn_fc2 = nn.Linear(fnn_hidden1_size, fnn_hidden2_size, bias=True)
+        self.fnn_fc3 = nn.Linear(fnn_hidden2_size, fnn_output_size, bias=True)
+
+        # GCNN: layers
+        self.gnn_fc1 = nn.Linear(gnn_input_size, gnn_output_size, bias=True)
+
+        # ICNN: fully connected layers and input mapping
+        self.icnn_fc1 = nn.Linear(icnn_input_size, icnn_hidden1_size, bias=True)
+        self.icnn_fc2 = nn.Linear(icnn_hidden1_size, icnn_hidden2_size, bias=True)
+        self.icnn_fc3 = nn.Linear(icnn_hidden2_size, icnn_hidden3_size, bias=True)
+        self.icnn_fc4 = nn.Linear(icnn_hidden3_size, icnnn_output_size, bias=True)
+        self.icnn_im2 = nn.Linear(icnn_input_size, icnn_hidden2_size, bias=False)
+        self.icnn_im3 = nn.Linear(icnn_input_size, icnn_hidden3_size, bias=False)
+        self.icnn_im4 = nn.Linear(icnn_input_size, icnnn_output_size, bias=False)
+
+
+class CSTRModelBlack(ModelBlack):
+    def __init__(self, controlled_system, lyapunov_correction, generator, dev, xref):
+        ModelBlack.__init__(self, controlled_system, lyapunov_correction, generator, dev, xref)
 
         # system parameters
         self.epsilon = 0.00001
@@ -217,9 +261,9 @@ class CSTRModel(Model):
         return h_X
 
 
-class DHOModel(Model):
+class DHOModel(ModelBlack):
     def __init__(self, controlled_system, lyapunov_correction, generator, dev, xref):
-        Model.__init__(self, controlled_system, lyapunov_correction, generator, dev, xref)
+        ModelBlack.__init__(self, controlled_system, lyapunov_correction, generator, dev, xref)
         # system parameters
         self.epsilon = 0.01
         self.alpha = 0.1

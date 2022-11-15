@@ -1,0 +1,60 @@
+--name:
+20221115_1248
+
+--model type:
+DHO
+
+--controlled system:
+True
+
+--lyapunov correction:
+False
+
+--learning rate:
+0.01
+
+--number of epoches:
+10
+
+--number of batches:
+80
+
+--number of samples per batch:
+512
+
+--FNN fc1 weights:
+Parameter containing:
+tensor([[ 1.7353e-04,  9.0141e-01],
+        [-4.9975e-01,  3.3448e-03]], requires_grad=True)
+
+--GNN fc1 weights:
+Parameter containing:
+tensor([[ 0.1569, -0.2629],
+        [-0.0356, -0.2471]], requires_grad=True)
+
+--GNN fc1 bias:
+Parameter containing:
+tensor([-0.1041, -0.9753], requires_grad=True)
+
+--Testing loss:
+tensor(0.1568, grad_fn=<MulBackward0>)
+tensor(0.0664, grad_fn=<MulBackward0>)
+tensor(0.0387, grad_fn=<MulBackward0>)
+tensor(0.0276, grad_fn=<MulBackward0>)
+tensor(0.0223, grad_fn=<MulBackward0>)
+tensor(0.0175, grad_fn=<MulBackward0>)
+tensor(0.0143, grad_fn=<MulBackward0>)
+tensor(0.0121, grad_fn=<MulBackward0>)
+tensor(0.0098, grad_fn=<MulBackward0>)
+tensor(0.0081, grad_fn=<MulBackward0>)
+--Training losses:
+tensor(0.0022, grad_fn=<DivBackward0>)
+tensor(0.0010, grad_fn=<DivBackward0>)
+tensor(0.0005, grad_fn=<DivBackward0>)
+tensor(0.0004, grad_fn=<DivBackward0>)
+tensor(0.0003, grad_fn=<DivBackward0>)
+tensor(0.0002, grad_fn=<DivBackward0>)
+tensor(0.0002, grad_fn=<DivBackward0>)
+tensor(0.0002, grad_fn=<DivBackward0>)
+tensor(0.0001, grad_fn=<DivBackward0>)
+tensor(0.0001, grad_fn=<DivBackward0>)

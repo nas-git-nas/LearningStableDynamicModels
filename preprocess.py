@@ -1,9 +1,6 @@
-import pandas as pd
 import os
 import matplotlib.pyplot as plt
 import numpy as np
-from pysindy.differentiation import FiniteDifference
-from pysindy.differentiation import SmoothedFiniteDifference
 from pysindy.differentiation import SINDyDerivative
 from scipy import interpolate
 
@@ -237,9 +234,9 @@ def main():
     pp = Preprocess()
     pp.loadData()
     pp.stamp2seconds()
-    pp.cropData(plot=False)
-    pp.intermolateU(plot=False)
-    pp.diffPosition(plot=False)
+    pp.cropData(plot=True)
+    pp.intermolateU(plot=True)
+    pp.diffPosition(plot=True)
     pp.saveData()
 
 if __name__ == "__main__":

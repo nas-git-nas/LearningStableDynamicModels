@@ -1,4 +1,5 @@
 from abc import abstractmethod
+import os
 import numpy as np
 import torch
 
@@ -20,6 +21,10 @@ class System:
         self.u_max = None
 
     @abstractmethod
+    def generateX(self, N):
+        pass
+
+    @abstractmethod
     def calcDX(self, X, U, U_hat=False):
         pass
 
@@ -38,45 +43,36 @@ class System:
         
         return self.X.detach().clone(), U, self.dX.detach().clone()
 
-    def generateData(self, N, nb_batches):
+    def loadData(self):
         """
-        Description: generate one batch of samples X and its derivative f_X
-        In N: batch size
-        In nb_batches: number of batches
-        Out X: sample data (nb_batches x N x D)
-        Out dX_X: derivative of X (nb_batches x N x D)
+        Description: load data from csv files: X, U and dX
         """
-        self.X = torch.zeros((nb_batches,N,self.D), dtype=float)
-        self.U = torch.zeros((nb_batches,N,self.M), dtype=float)
-        self.dX = torch.zeros((nb_batches,N,self.D), dtype=float)
-        for i in range(nb_batches):
-            self.X[i,:,:], self.U[i,:,:] = self.generateX(N)
-            self.dX[i,:,:] = self.calcDX(self.X[i,:,:], self.U[i,:,:])
+        X = np.genfromtxt(os.path.join("experiment", self.series, "data_state.csv"), delimiter=",")
+        U = np.genfromtxt(os.path.join("experiment", self.series, "data_input.csv"), delimiter=",")
+        dX = np.genfromtxt(os.path.join("experiment", self.series, "data_dynamics.csv"), delimiter=",")
 
-        self.X = self.X.float().to(self.device)
-        self.U = self.U.float().to(self.device)
-        self.dX = self.dX.float().to(self.device)
+        self.X = torch.tensor(X).float().to(self.device)
+        self.U = torch.tensor(U).float().to(self.device)
+        self.dX = torch.tensor(dX).float().to(self.device)
 
-    def generateX(self, N):
+    def generateData(self, nb_data):
         """
-        Description: generate one batch of samples X
-        In N: batch size
-        Out X: sample data (N x D)
-        Out U: controll input data (N x M)
-        """        
-        
-        X = torch.einsum('nd,d->nd', torch.rand(N, self.D), (self.x_max-self.x_min)) + self.x_min
-        # X = torch.rand(N, self.D)
-        # X[:,0] = X[:,0]*(self.x_max-self.x_min) + self.x_min
-        # X[:,1] = X[:,1]*(self.dx_max-self.dx_min) + self.dx_min
+        Description: generate data
+        Args:
+            nb_data: number of data samples to generate
+        """
+        X = torch.einsum('nd,d->nd', torch.rand(nb_data, self.D), (self.x_max-self.x_min)) + self.x_min
 
-        U = torch.empty((N, self.M))
+        U = torch.empty((nb_data, self.M))
         if self.controlled_system:
-            U = torch.rand(N, self.M)
-            U = U*(self.u_max-self.u_min) + self.u_min
-       
-        return X, U
+            U = torch.einsum('nm,m->nm', torch.rand(nb_data, self.M), (self.u_max-self.u_min)) + self.u_min      
 
+        dX = self.calcDX(X, U)
+
+        self.X = X.float().to(self.device)
+        self.U = U.float().to(self.device)
+        self.dX = dX.float().to(self.device)
+        
     def uMap(self, U):
         """
         Maps control input from u in [u_min,u_max] to uhat in [-1, 1].
@@ -182,6 +178,24 @@ class System:
 
         return best_point
 
+class HolohoverSystem(System):
+    def __init__(self, dev, controlled_system=True):
+        System.__init__(self, dev, controlled_system=controlled_system)
+        # system dimensions
+        self.D = 6 # number of state dimensions
+        self.M = 6 # nb. of control dimensions
+
+        # system boundaries
+        self.x_min = torch.tensor([-0.5, -0.5, -3.2, -0.5, -0.5, -5])
+        self.x_max = torch.tensor([0.5, 0.5, 3.2, 0.5, 0.5, 5])
+        self.u_min = torch.zeros(self.M)
+        self.u_max = torch.ones(self.M)
+
+        # experiment
+        self.series = "holohover_20221025"
+
+
+
 
 class CSTRSystem(System):
     def __init__(self, dev, controlled_system=True):
@@ -200,8 +214,8 @@ class CSTRSystem(System):
         # system boundaries
         self.x_min = torch.tensor([1, 0.5])
         self.x_max = torch.tensor([3, 2])
-        self.u_min = 3
-        self.u_max = 35
+        self.u_min = torch.tensor([3])
+        self.u_max = torch.tensor([35])
 
     def calcDX(self, X, U, U_hat=False):
         """
@@ -271,8 +285,8 @@ class DHOSystem(System):
         # system boundaries
         self.x_min = torch.tensor([-0.5, -0.5])
         self.x_max = torch.tensor([1.5, 0.5])
-        self.u_min = -1
-        self.u_max = 1
+        self.u_min = torch.tensor([-1])
+        self.u_max = torch.tensor([1])
 
     def calcDX(self, X, U, U_hat=False):
         """
