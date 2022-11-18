@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
 class Plot():
-    def __init__(self, model, system, dev, learn=None) -> None:
+    def __init__(self, dev, model, system, learn=None) -> None:
         self.model = model
         self.sys = system
         self.learn = learn
@@ -15,6 +15,26 @@ class Plot():
             self.quiver_scale = 50.0
         elif self.learn.model_type == "CSTR":
             self.quiver_scale = 0.8
+
+    # def greyModel(self, u_eq):
+    #     # define control input, u_hat is bounded by [-1,1]
+    #     Ueq = u_eq.reshape((1,self.sys.M))
+    #     Umax = torch.ones((1,self.sys.M)) 
+
+    #     xmin = self.sys.x_min - (self.sys.x_max-self.sys.x_min)/4
+    #     xmax = self.sys.x_max + (self.sys.x_max-self.sys.x_min)/4
+
+    #     fig, axs = plt.subplots(nrows=4, ncols=2, figsize =(10, 18))
+
+    #     self.modelLoss(axs[0,0])
+    #     self.modelLoss(axs[0,1], log_scale=True)
+
+    #     self.modelRealDyn(axs[2,0], xmin, xmax, Ueq)
+    #     self.modelLearnedDyn(axs[2,1], xmin, xmax, Ueq)
+    #     self.modelRealDyn(axs[3,0], xmin, xmax, Ueq)
+    #     self.modelLearnedDyn(axs[3,1], xmin, xmax, Ueq)
+
+    #     plt.savefig(os.path.join(self.learn.model_dir, self.learn.model_name + "_figure"))       
 
     def fakeModel(self, u_eq):
 

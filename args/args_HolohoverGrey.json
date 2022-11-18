@@ -1,0 +1,27 @@
+{
+    "data":
+    {
+        "load_data": true,
+        "series": "holohover_20221025"
+    },
+    "black_model":
+    {
+        "controlled_system": true,
+        "lyapunov_correction": false
+    },
+    "grey_model":
+    {
+        "learn_center_of_mass": false,
+        "learn_inertia": false
+    },
+    "learn":
+    {
+        "load_model": false,
+        "model_path": false,
+        "self.learning_rate": 0.000001,
+        "self.nb_epochs": 200,
+        "self.nb_batches": 80,
+        "self.batch_size": 512,
+        "self.testing_share": 0.1
+    }
+}

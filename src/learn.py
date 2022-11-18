@@ -12,9 +12,14 @@ import torch
 
 
 class Learn():
-    def __init__(self, system, model, dev, model_type):
+    def __init__(self, args, dev, system, model):
+        self.args = args
+
+        # data
+        self.load_data = args.load_data
+
         # save model
-        self.model_type = model_type
+        self.model_type = args.model_type
         t = datetime.now()
         self.model_name = t.strftime("%Y%m%d") + "_" + t.strftime("%H%M")
         self.model_dir = os.path.join("models", self.model_type, self.model_name)
@@ -23,11 +28,11 @@ class Learn():
         os.mkdir(self.model_dir)
         
         # learning parameters
-        self.learning_rate = 0.01
-        self.nb_epochs = 10
-        self.nb_batches = 80
-        self.batch_size = 512 
-        self.testing_share = 0.1 # used to split data in training and testing sets
+        self.learning_rate = args.learning_rate
+        self.nb_epochs = args.nb_epochs
+        self.nb_batches = args.nb_batches
+        self.batch_size = args.batch_size
+        self.testing_share = args.testing_share
         self.device = dev
                                       
         self.sys = system
@@ -46,10 +51,10 @@ class Learn():
         Description: optimize nb_epochs times the model with all data (batch_size*nb_batches)
         """
         # load/generate data set
-        if self.model_type=="DHO" or self.model_type=="CSTR":
+        if self.load_data:
+            self.sys.loadData()            
+        else:
             self.sys.generateData(self.batch_size*self.nb_batches)
-        elif self.model_type=="Holohover":
-            self.sys.loadData()
 
         
         for j in range(self.nb_epochs):
@@ -57,18 +62,16 @@ class Learn():
 
             # get data and split it into training and testing sets
             X_tr, X_te, U_tr, U_te, dX_tr, dX_te = self.splitData()
-            print(X_tr.shape, U_tr.shape, dX_tr.shape)
-            print(X_te.shape, U_te.shape, dX_te.shape)
 
             loss_tr = 0
             for X, U, dX_real in self.iterData(X_tr, U_tr, dX_tr):
-                print(X.shape, U.shape, dX_real.shape)
-                
+              
                 # forward pass through models
-                dX_X = self.model.forward(X, U) # output of FCNN if input X (n)               
+                dX_X = self.model.forward(X, U) # (N,D)
+                # print(f"acc real: {torch.mean(dX_real[:,3:6], axis=0)}, acc train: {torch.mean(dX_X[:,3:6], axis=0)}")              
 
                 # calc. loss
-                loss = self.loss_function(dX_X, dX_real)
+                loss = self.lossFunction(dX_X, dX_real)
                 loss_tr += loss
 
                 # backwards pass through models
@@ -76,18 +79,23 @@ class Learn():
                 loss.backward()
                 self.optimizer.step()
 
+                # print(f"trainting loss = {loss}")
+
             # avg. training losses
-            self.losses_tr.append(loss / np.ceil(X_tr.shape[0]/self.batch_size))
+            self.losses_tr.append(loss_tr / np.ceil(X_tr.shape[0]/self.batch_size))
 
             # evaluate testing set
             dX_X = self.model.forward(X_te, U_te)
-            self.losses_te.append(self.loss_function(dX_X, dX_te))
+            self.losses_te.append(self.lossFunction(dX_X, dX_te))
 
             # print results
             end_time =time.time()
             print(f"Epoch {j}: \telapse time = {np.round(end_time-start_time,3)}, \ttesting loss = {self.losses_te[-1]}, \ttraining loss = {self.losses_tr[-1]}")
 
-    def loss_function(self, dX_X, dX_real):
+        print(f"Center of mass: {self.model.center_of_mass}")
+        print(f"Inertia: {self.model.inertia}")
+
+    def lossFunction(self, dX_X, dX_real):
         """
         Description: calc. average loss of batch X
         In dX_X: approx. of system dynamics (b x n)
@@ -95,6 +103,16 @@ class Learn():
         Out L: average loss of batch X (scalar)
         """
         return (1/dX_X.shape[0]) * torch.sum(torch.square(dX_X-dX_real))
+
+    def lossFunction2(self, dX_X, dX_real):
+        """
+        Description: calc. average loss of batch X
+        In dX_X: approx. of system dynamics (b x n)
+        In dX_real: real system dynamics (b x n)
+        Out L: average loss of batch X (scalar)
+        """
+        reg = torch.linalg.norm(self.model.center_of_mass-self.model.init_center_of_mass) + (self.model.inertia-self.model.init_inertia)**2
+        return (1/dX_X.shape[0]) * torch.sum(torch.square(dX_X-dX_real)) + reg
 
     def splitData(self):
         """
@@ -158,7 +176,7 @@ class Learn():
         # test model on test data set
         test_X, test_U, test_dX_real = self.sys.getData()
         test_dX_X = self.model.forward(test_X[0,:,:], test_U[0,:,:])
-        return self.loss_function(test_dX_X, test_dX_real[0,:,:])        
+        return self.lossFunction(test_dX_X, test_dX_real[0,:,:])        
 
     def saveModel(self):
         # save model parameters
@@ -168,15 +186,13 @@ class Learn():
         with open(os.path.join(self.model_dir, self.model_name+"_log"), 'w') as f:
             f.write("--name:\n" + self.model_name + "\n\n")
             f.write("--model type:\n" + self.model_type + "\n\n")
-            f.write("--controlled system:\n" + str(self.model.controlled_system) + "\n\n")
-            f.write("--lyapunov correction:\n" + str(self.model.lyapunov_correction) + "\n\n")
+            if self.args.black_model:
+                f.write("--controlled system:\n" + str(self.args.controlled_system) + "\n\n")
+                f.write("--lyapunov correction:\n" + str(self.args.lyapunov_correction) + "\n\n")
             f.write("--learning rate:\n" + str(self.learning_rate) + "\n\n")
             f.write("--number of epoches:\n" + str(self.nb_epochs) + "\n\n")
             f.write("--number of batches:\n" + str(self.nb_batches) + "\n\n")
             f.write("--number of samples per batch:\n" + str(self.batch_size) + "\n\n")
-            f.write("--FNN fc1 weights:\n" + str(self.model.fnn_fc1.weight) + "\n\n")
-            f.write("--GNN fc1 weights:\n" + str(self.model.gnn_fc1.weight) + "\n\n")
-            f.write("--GNN fc1 bias:\n" + str(self.model.gnn_fc1.bias) + "\n\n")
             f.write("--Testing loss:\n")
             for loss in self.losses_te:
                 f.write(str(loss) + "\n")

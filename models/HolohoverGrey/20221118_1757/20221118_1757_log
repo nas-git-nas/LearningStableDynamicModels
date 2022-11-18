@@ -1,0 +1,22 @@
+--name:
+20221118_1757
+
+--model type:
+HolohoverGrey
+
+--learning rate:
+1e-07
+
+--number of epoches:
+1
+
+--number of batches:
+80
+
+--number of samples per batch:
+512
+
+--Testing loss:
+tensor(24.4124, grad_fn=<MulBackward0>)
+--Training losses:
+tensor(47.9317, grad_fn=<DivBackward0>)

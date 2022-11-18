@@ -1,0 +1,18 @@
+{
+    "system":
+    {
+        "controlled_system": true,
+        "lyapunov_correction": false
+    },
+    "learn":
+    {
+        "load_model": false,
+        "model_path": "models/CSTR/20221106_1040/20221106_1040_model",
+        "self.learning_rate": 0.01,
+        "self.nb_epochs": 10,
+        "self.nb_batches": 80,
+        "self.batch_size": 512,
+        "self.testing_share": 0.1
+    }
+}
+   

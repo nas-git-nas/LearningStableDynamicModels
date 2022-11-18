@@ -3,15 +3,15 @@ import torch
 import torch.nn as nn
 
 class ModelBlack(nn.Module):
-    def __init__(self, controlled_system, lyapunov_correction, generator, dev, xref):
+    def __init__(self, args, dev, generator, xref):
         super(ModelBlack, self).__init__()
 
         self.device = dev
         self.sys = generator
 
         # system parameters
-        self.controlled_system = controlled_system
-        self.lyapunov_correction = lyapunov_correction   
+        self.controlled_system = args.controlled_system
+        self.lyapunov_correction = args.lyapunov_correction   
 
         # reference point
         self.Xref = xref.clone().detach().reshape(1,len(xref)).float().to(self.device) # (1,D)  
@@ -126,8 +126,8 @@ class ModelBlack(nn.Module):
         return -torch.einsum('nd,n->nd', dV_norm, self.relu(stability_conditions))
 
 class HolohoverModelBlack(ModelBlack):
-    def __init__(self, controlled_system, lyapunov_correction, generator, dev, xref):
-        ModelBlack.__init__(self, controlled_system, lyapunov_correction, generator, dev, xref)
+    def __init__(self, args, dev, generator, xref):
+        ModelBlack.__init__(self, args, dev, generator, xref)
 
         # system parameters
         self.epsilon = 0.00001
@@ -171,8 +171,8 @@ class HolohoverModelBlack(ModelBlack):
 
 
 class CSTRModelBlack(ModelBlack):
-    def __init__(self, controlled_system, lyapunov_correction, generator, dev, xref):
-        ModelBlack.__init__(self, controlled_system, lyapunov_correction, generator, dev, xref)
+    def __init__(self, args, dev, generator, xref):
+        ModelBlack.__init__(self, args, dev, generator, xref)
 
         # system parameters
         self.epsilon = 0.00001
@@ -261,9 +261,9 @@ class CSTRModelBlack(ModelBlack):
         return h_X
 
 
-class DHOModel(ModelBlack):
-    def __init__(self, controlled_system, lyapunov_correction, generator, dev, xref):
-        ModelBlack.__init__(self, controlled_system, lyapunov_correction, generator, dev, xref)
+class DHOModelBlack(ModelBlack):
+    def __init__(self, args, dev, generator, xref):
+        ModelBlack.__init__(self, args, dev, generator, xref)
         # system parameters
         self.epsilon = 0.01
         self.alpha = 0.1

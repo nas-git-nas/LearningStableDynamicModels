@@ -1,0 +1,30 @@
+--name:
+20221118_1613
+
+--model type:
+HolohoverGrey
+
+--controlled system:
+True
+
+--lyapunov correction:
+False
+
+--learning rate:
+0.01
+
+--number of epoches:
+2
+
+--number of batches:
+80
+
+--number of samples per batch:
+512
+
+--Testing loss:
+tensor(nan, grad_fn=<MulBackward0>)
+tensor(nan, grad_fn=<MulBackward0>)
+--Training losses:
+tensor(nan, grad_fn=<DivBackward0>)
+tensor(nan, grad_fn=<DivBackward0>)

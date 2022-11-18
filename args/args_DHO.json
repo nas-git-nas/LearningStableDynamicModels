@@ -1,0 +1,17 @@
+{
+    "system":
+    {
+        "controlled_system": true,
+        "lyapunov_correction": false
+    },
+    "learn":
+    {
+        "load_model": false,
+        "model_path": "models/DHO/20221103_0822/20221103_0822_model",
+        "self.learning_rate": 0.01,
+        "self.nb_epochs": 10,
+        "self.nb_batches": 80,
+        "self.batch_size": 512,
+        "self.testing_share": 0.1
+    }
+}

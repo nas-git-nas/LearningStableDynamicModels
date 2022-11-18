@@ -4,10 +4,10 @@ import numpy as np
 import torch
 
 class System:
-    def __init__(self, dev, controlled_system=True):
+    def __init__(self, args, dev):
 
+        self.args = args
         self.device = dev
-        self.controlled_system=controlled_system
 
         # data
         self.X = None
@@ -64,7 +64,7 @@ class System:
         X = torch.einsum('nd,d->nd', torch.rand(nb_data, self.D), (self.x_max-self.x_min)) + self.x_min
 
         U = torch.empty((nb_data, self.M))
-        if self.controlled_system:
+        if self.args.controlled_system:
             U = torch.einsum('nm,m->nm', torch.rand(nb_data, self.M), (self.u_max-self.u_min)) + self.u_min      
 
         dX = self.calcDX(X, U)
@@ -179,8 +179,8 @@ class System:
         return best_point
 
 class HolohoverSystem(System):
-    def __init__(self, dev, controlled_system=True):
-        System.__init__(self, dev, controlled_system=controlled_system)
+    def __init__(self, args, dev):
+        System.__init__(self, args, dev)
         # system dimensions
         self.D = 6 # number of state dimensions
         self.M = 6 # nb. of control dimensions
@@ -192,14 +192,14 @@ class HolohoverSystem(System):
         self.u_max = torch.ones(self.M)
 
         # experiment
-        self.series = "holohover_20221025"
+        self.series = args.series
 
 
 
 
 class CSTRSystem(System):
-    def __init__(self, dev, controlled_system=True):
-        System.__init__(self, dev, controlled_system=controlled_system)
+    def __init__(self, args, dev):
+        System.__init__(self, args, dev)
         # system dimensions
         self.D = 2 # number of state dimensions
         self.M = 1 # nb. of control dimensions
@@ -270,8 +270,8 @@ class CSTRSystem(System):
 
 
 class DHOSystem(System):
-    def __init__(self, dev, controlled_system=True):
-        System.__init__(self, dev, controlled_system=controlled_system)
+    def __init__(self, args, dev):
+        System.__init__(self, args, dev)
 
         # system dimensions
         self.D = 2 # number of state dimensions
