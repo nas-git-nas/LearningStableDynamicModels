@@ -3,6 +3,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import cvxpy as cp
 
+from system import DHOSystem, CSTRSystem
+from model import DHOModel, CSTRModel
+from plot import Plot
 
 if torch.cuda.is_available():  
     dev = "cuda:0" 
@@ -11,44 +14,62 @@ else:
 device = torch.device(dev)
 
 class Simulation():
-    def __init__(self, sys, model):
-        
-        self.sys = sys
-        self.model = model  
+    def __init__(self):
+        # system type
+        self.model_type = "DHO"        
+        self.controlled_system = True 
+        self.lyapunov_correction = True
+
+        # initialize system
+        if self.model_type == "DHO":
+            self.sys = DHOSystem(dev=device, controlled_system=self.controlled_system)
+        elif self.model_type == "CSTR":
+            self.sys = CSTRSystem(dev=device, controlled_system=self.controlled_system)
+
+        # calc. equilibrium point
+        # self.ueq = torch.tensor([14.19])
+        self.ueq = torch.tensor([0]) 
+        self.xeq = self.sys.equPoint(self.ueq, U_hat=False)
+        self.ueq = self.sys.uMap(self.ueq) # ueq_hat -> ueq=14.19
+
+        # print(f"for u=-0.5 xeq={self.sys.equPoint(torch.tensor([-0.5]), U_hat=True)}")
+
+
+        # init. model
+        if self.model_type == "DHO":
+            self.model = DHOModel(controlled_system=self.controlled_system, 
+                                  lyapunov_correction=self.lyapunov_correction, 
+                                  generator=self.sys, dev=device, xref=self.xeq)
+        elif self.model_type == "CSTR":       
+            self.model = CSTRModel(controlled_system=self.controlled_system, 
+                                   lyapunov_correction=self.lyapunov_correction, 
+                                   generator=self.sys, dev=device, xref=self.xeq)
+
+
+        model_path = "models/DHO/20221103_0822/20221103_0822_model"
+        self.model.load_state_dict(torch.load(model_path))
 
         # simulation params
         self.slack_coeff = 1000
 
-    def simGrey(self):
+        self.plot = Plot(model=self.model, system=self.sys, dev=device)
+
+    def simulation(self):
+        # X0 = self.sys.x_min.reshape(1,self.sys.D)
+        # U0 = torch.tensor(self.sys.uMap(self.sys.u_min)).reshape(1,self.sys.M)
         nb_steps = 1200
         periode = 0.01
-        
-        X, U_seq, dX_seq = self.sys.getData(u_map=True)
-
-        Xreal_seq = self.simRealSys(nb_steps, periode, X[0,:], dX_seq)
-        Xlearn_seq, _, _, _ = self.simLearnedSys(   nb_steps, periode, X[0,:].detach().numpy(), 
-                                                    U_seq.detach().numpy(), self.model.forward)
-        
-        return Xreal_seq, Xlearn_seq
+        X0 = self.xeq.detach().numpy()
+        # Udes_seq = np.array([i/100 for i in range(nb_steps)]).reshape(nb_steps,self.sys.M)
+        Udes_seq = np.array([1 for i in range(nb_steps)]).reshape(nb_steps,self.sys.M)
 
 
-    def simRealSys(self, nb_steps, periode, X0, dX_seq): 
+        X_seq_on, Usafe_seq_on, slack_seq_on, V_seq_on = self.simSys(nb_steps, periode, X0, Udes_seq, safety_filter=True)
+        X_seq_off, _, _, _ = self.simSys(nb_steps, periode, X0, Udes_seq, safety_filter=False)
 
-        X_seq = np.zeros((nb_steps+1, self.sys.D))
-        X_seq[0,:] = X0
+        self.plot.sim(X_seq_on, X_seq_off, Udes_seq, Usafe_seq_on, slack_seq_on, V_seq_on)
 
-        X = X0
-        for i in range(nb_steps):           
-            # update state with system dynamicys
-            dX = dX_seq[i,:]
-            X = X + periode*dX.detach().numpy()
-
-            # append results
-            X_seq[i+1,:] = X
-
-        return X_seq
-    
-    def simLearnedSys(self, nb_steps, periode, X0, Udes_seq, dX_fct, safety_filter=False):
+    def simSys(self, nb_steps, periode, X0, Udes_seq, safety_filter=True):
         """
         Simulate system with a given control input sequence
         Args:
@@ -56,7 +77,6 @@ class Simulation():
             periode: simulation periode
             X0: starting state at time step 0, numpy array (D)
             Udes_seq: sequence of desired control inputs, numpy array (nb_steps,M)
-            dX_fct: function to calc. derivative of X, function with args (X, U)
             safety_filter: if True safety filter is active
         Returns:
             X_seq: resulting state sequence (nb_steps+1,D)
@@ -80,8 +100,8 @@ class Simulation():
                 V = 0
             
             # update state with system dynamicys
-            dX = dX_fct(torch.tensor(X).reshape(1,self.sys.D), 
-                        torch.tensor(Usafe).reshape(1,self.sys.M))
+            dX = self.sys.calcDX(torch.tensor(X).reshape(1,self.sys.D), 
+                                 torch.tensor(Usafe).reshape(1,self.sys.M), U_hat=True)
             X = X + periode*dX.detach().numpy()
 
             # append results
@@ -89,6 +109,9 @@ class Simulation():
             Usafe_seq[i,:] = Usafe
             slack_seq[i] = np.sum(slack)
             V_seq[i] = V
+
+            # add plot gradV.T@dX, must be smaller than zero
+            # slack von u wegnehemen
 
         return X_seq, Usafe_seq, slack_seq, V_seq
 

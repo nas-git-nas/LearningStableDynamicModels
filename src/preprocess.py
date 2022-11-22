@@ -2,12 +2,12 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 from pysindy.differentiation import SINDyDerivative
-from scipy import interpolate
+from scipy import interpolate, stats
 
 class Preprocess():
-    def __init__(self) -> None:
+    def __init__(self, series) -> None:
         # experiment
-        self.series = "holohover_20221025"
+        self.series = series 
         self.D = 6
         self.M = 6
 
@@ -21,6 +21,10 @@ class Preprocess():
         self.tx = {}
         self.u = {}
         self.tu = {}
+        self.force = {}
+        self.tforce = {}
+        # self.torque = {}
+        # self.ttorque = {}
 
     def loadData(self):
         """
@@ -57,6 +61,12 @@ class Preprocess():
                                                     usecols=[1], dtype=float, skip_footer=skip_footer)
                     self.u[root] = np.genfromtxt(   os.path.join(root, f), delimiter=",", skip_header=1, 
                                                     usecols=[2,3,4,5,6,7], dtype=float, skip_footer=skip_footer)
+                elif f.find("thrust") != -1:
+                    #self.datas[f[:-4]] = pd.read_csv(os.path.join(root, f)).to_numpy()
+                    self.tforce[root] = np.genfromtxt(  os.path.join(root, f), delimiter=",", skip_header=1, 
+                                                        usecols=[1], dtype=float, skip_footer=skip_footer)
+                    self.force[root] = np.genfromtxt(   os.path.join(root, f), delimiter=",", skip_header=1, 
+                                                        usecols=[2,3,4], dtype=float, skip_footer=skip_footer)
 
     def saveData(self):
         """
@@ -85,15 +95,22 @@ class Preprocess():
         """
         for exp in self.tx:
             # get starting time stamp
-            start_stamp = 0
-            if self.tx[exp][0] < self.tu[exp][0]:
-                start_stamp = self.tx[exp][0]
-            else: 
-                start_stamp = self.tu[exp][0]
+            try: tx_min = self.tx[exp][0] 
+            except: tx_min = np.Inf
+            try: tu_min = self.tu[exp][0]
+            except: tu_min = np.Inf
+            try: tf_min = self.tforce[exp][0]
+            except: tf_min = np.Inf
+            start_stamp = np.min(np.array([tx_min, tu_min, tf_min]))
 
-            # convert tx and tu from stamp to seconds
-            self.tx[exp] = (self.tx[exp]-start_stamp) / 1000000000
-            self.tu[exp] = (self.tu[exp]-start_stamp) / 1000000000
+            # convert tx, tu and tforce from stamp to seconds
+            try: self.tx[exp] = (self.tx[exp]-start_stamp) / 1000000000
+            except: pass
+            try: self.tu[exp] = (self.tu[exp]-start_stamp) / 1000000000
+            except: pass
+            try: self.tforce[exp] = (self.tforce[exp]-start_stamp) / 1000000000
+            except: pass
+            
 
     def cropData(self, plot=False):
         """
@@ -228,10 +245,147 @@ class Preprocess():
             X[i,:] = X[i-1,:] + dX[i,:]*(tX[i]-tX[i-1])
         
         return X
+
+    def getThrust(self, plot=False):
+        # dict for signals and motors
+        thrusts = {}
+        for i in range(6):
+            thrusts[i] = {}
+
+
+        # loop through all experiments        
+        for exp in self.force:
+
+            signal_state_prev = True
+            signal_time_start = 0 
+            mot = 0
+            sig = 0
+            for i, (tu, u) in enumerate(zip(self.tu[exp], self.u[exp])):
+                
+                # check if currently a signal is send
+                if np.sum(u) > 0:
+                    signal_state = True
+                else: 
+                    signal_state = False
+
+                # check if signal state toggled
+                if signal_state is not signal_state_prev or i==len(self.tu[exp])-1:
+                    # evaluate start and stop indices of signal
+                    assert signal_time_start < tu
+                    idx_start =  np.argmax(self.tforce[exp]>signal_time_start)
+                    idx_stop = np.argmax(self.tforce[exp]>=tu)
+
+                    # calc. signal mean and standard deviation
+                    if signal_state_prev:
+                        force = self.force[exp][idx_start:idx_stop,:]
+                        time = self.tforce[exp][idx_start:idx_stop]
+                        mot = np.argmax(self.u[exp][i-1])
+                        sig = np.max(self.u[exp][i-1])
+                        thrusts[mot][sig] = {   "idx_start":idx_start, "idx_stop":idx_stop, "time":time, "force":force, 
+                                                "bg":None, "norm":None, "mean":None, "std":None }
+                    else: 
+                        thrusts[mot][sig]["bg"] = self.force[exp][idx_start:idx_stop,:]
+                    
+                    # set starting time of signal while removing 0.5s
+                    signal_time_start = tu + 0.5
+                
+                    # update previous state
+                    signal_state_prev = signal_state
+
+        for exp in self.force:
+            if plot:
+                fig, axs = plt.subplots(nrows=3, ncols=2, figsize =(12, 8)) 
+                axs[0,0].plot(self.tforce[exp], self.force[exp][:,0], color="b", label="Thrust x")
+                axs[0,1].plot(self.tforce[exp], self.force[exp][:,1], color="g", label="Thrust y")
+                axs[0,0].set_title(f"Thrust x")
+                axs[0,1].set_title(f"Thrust y")
+                axs[1,0].set_title(f"Thrust x (offset removed)")   
+                axs[1,1].set_title(f"Thrust y (offset removed)")
+                axs[2,0].set_title(f"Thrust norm (offset removed)")
+
+            for mot in thrusts:
+                for sig in thrusts[mot]:
+                    bg_x = np.mean(thrusts[mot][sig]["bg"][:,0])
+                    bg_y = np.mean(thrusts[mot][sig]["bg"][:,1])
+                    bg_idx = thrusts[mot][sig]["idx_stop"]
+                    
+
+                    thrusts[mot][sig]["force"][:,0] = thrusts[mot][sig]["force"][:,0] - bg_x
+                    thrusts[mot][sig]["force"][:,1] = thrusts[mot][sig]["force"][:,1] - bg_y
+                    thrusts[mot][sig]["norm"] = np.sqrt(np.power(thrusts[mot][sig]["force"][:,0], 2) + np.power(thrusts[mot][sig]["force"][:,1], 2))
+                    thrusts[mot][sig]["mean"] = np.mean(thrusts[mot][sig]["norm"])
+                    thrusts[mot][sig]["std"] = np.std(thrusts[mot][sig]["norm"])
+            
+                    if plot:
+                        axs[0,0].scatter(self.tforce[exp][bg_idx], bg_x, color="r")
+                        axs[0,1].scatter(self.tforce[exp][bg_idx], bg_y, color="r")
+                        axs[1,0].plot(thrusts[mot][sig]["time"], thrusts[mot][sig]["force"][:,0], color="b", label="Thrust x")                    
+                        axs[1,1].plot(thrusts[mot][sig]["time"], thrusts[mot][sig]["force"][:,1], color="g", label="Thrust y")
+                        axs[2,0].plot(thrusts[mot][sig]["time"], thrusts[mot][sig]["norm"], color="b", label="Thrust norm")
+
+            if plot:
+                plt.show()
+        if plot:
+            for exp in self.force:
+                fig, axs = plt.subplots(nrows=2, ncols=3, figsize =(8, 8))             
+                for i, mot in enumerate(thrusts):
+                    k = int(i/len(axs[0]))
+                    l = i % len(axs[0])
+
+                    for sig in thrusts[mot]:
+                        axs[k,l].scatter(sig, thrusts[mot][sig]["mean"], color="b", label="Mean thrust")
+                        axs[k,l].errorbar(sig, thrusts[mot][sig]["mean"], thrusts[mot][sig]["std"], color="r", fmt='.k')
+                plt.show()
+
+        return thrusts
+
+    def approxThrust(self, thrusts, plot=False):
+        
+        for mot in thrusts:
+            signal = []
+            thrust = []
+            for sig in thrusts[mot]:
+                signal.append(sig)
+                thrust.append(thrusts[mot][sig]["mean"])
+
+            fig, axs = plt.subplots(nrows=2, ncols=3, figsize =(14, 8))
+            for j, deg in enumerate(range(1,7)):
+                k = int(j/len(axs[0]))
+                l = j % len(axs[0])
+
+                coeff = np.polyfit(np.array(signal, dtype=float), np.array(thrust, dtype=float), deg=deg)
+
+                lin_x = np.linspace(0, 1, 100)
+                lin_X = np.zeros((100,deg+1))
+                for i in range(lin_X.shape[1]):
+                    lin_X[:,i] = np.power(lin_x, i)
+                thrust_approx = lin_X @ np.flip(coeff)
+
+                stat_x = np.array(signal, dtype=float)
+                stat_X = np.zeros((len(signal),deg+1))
+                for i in range(stat_X.shape[1]):
+                    stat_X[:,i] = np.power(stat_x, i)
+                stat_approx = stat_X @ np.flip(coeff)
+                _, _, rvalue, _, _ = stats.linregress(stat_approx, np.array(thrust, dtype=float))
+
+                axs[k,l].scatter(signal, thrust, color="b", label="Meas.")
+                axs[k,l].plot(lin_x, thrust_approx, color="g", label="Approx.")
+                axs[k,l].set_title(f"Deg={deg} (R^2={np.round(rvalue**2, 4)})")
+                axs[k,l].set_xlabel("Signal")
+                axs[k,l].set_ylabel("Thrust")
+                axs[k,l].legend()
+
+
+            plt.show()
+
+
+
+
+
             
 
-def main():
-    pp = Preprocess()
+def main_experiment():
+    pp = Preprocess(series="holohover_20221025")
     pp.loadData()
     pp.stamp2seconds()
     pp.cropData(plot=True)
@@ -239,5 +393,13 @@ def main():
     pp.diffPosition(plot=True)
     pp.saveData()
 
+def main_signal2thrust():
+    pp = Preprocess(series="signal_20221121")
+    pp.loadData()
+    pp.stamp2seconds() 
+    thrusts = pp.getThrust(plot=False)
+    pp.approxThrust(thrusts, plot=True)
+
 if __name__ == "__main__":
-    main()
+    #main_experiment()
+    main_signal2thrust()

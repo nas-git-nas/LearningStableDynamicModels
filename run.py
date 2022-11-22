@@ -7,6 +7,7 @@ from src.model_black import DHOModelBlack, CSTRModelBlack, HolohoverModelBlack
 from src.model_grey import HolohoverModelGrey
 from src.learn import Learn
 from src.plot import Plot
+from src.simulation import Simulation
 
 
 def main():
@@ -61,8 +62,13 @@ def main():
     ld.saveModel()
 
     # plot results
-    # plot = Plot(dev=device, model=model, system=sys, learn=ld)
-    # plot.fakeModel(ueq)
+    plot = Plot(dev=device, model=model, system=sys, learn=ld)
+    # plot.greyModel(ueq)
+
+    # simulate system
+    sim = Simulation(sys, model)
+    Xreal_seq, Xlearn_seq = sim.simGrey()
+    plot.simGrey(Xreal_seq, Xlearn_seq)
     
 
 if __name__ == "__main__":

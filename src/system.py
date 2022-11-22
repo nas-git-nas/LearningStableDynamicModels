@@ -184,6 +184,7 @@ class HolohoverSystem(System):
         # system dimensions
         self.D = 6 # number of state dimensions
         self.M = 6 # nb. of control dimensions
+        self.S = 3 # number of space dimensions
 
         # system boundaries
         self.x_min = torch.tensor([-0.5, -0.5, -3.2, -0.5, -0.5, -5])
@@ -194,8 +195,54 @@ class HolohoverSystem(System):
         # experiment
         self.series = args.series
 
+    # def sampleX(self, Udes, nb_samples=100, x_error_proc=0.05, u_error_proc=0.2, U_hat=False):
 
+    #     if U_hat:
+    #         Udes = self.uMapInv(Udes)
 
+    #     X = self.X.detach().clone().cpu().numpy()
+    #     dX = self.dX.detach().clone().cpu().numpy()
+    #     U = self.U.detach().clone().cpu().numpy()
+    #     Udes = Udes.flatten().detach().clone().cpu().numpy()
+
+    #     u_max = np.max(U, axis=0)
+    #     u_min = np.min(U, axis=0)
+    #     u_error = (u_max-u_min)*u_error_proc
+
+    #     # choose samples that have Udes +- u_error (error margin)
+    #     indices = np.ones(X.shape[0], dtype=bool)
+    #     for i in range(self.M):
+    #         indices = indices & ((Udes[i]-u_error[i])<U[:,i]) & (U[:,i]<(Udes[i]+u_error[i]))
+    #     X = X[np.where(indices)]
+    #     dX = dX[np.where(indices)]
+
+    #     x_max = np.max(X, axis=0)
+    #     x_min = np.min(X, axis=0)
+    #     x_error = (x_max-x_min)*x_error_proc
+
+    #     # sample X
+    #     dX_samples = np.empty((nb_samples, self.D)) * np.nan
+    #     for i in range(self.S):
+    #         x_lins = np.linspace(x_min[i+self.S], x_max[i+self.S], nb_samples)
+    #         for j, x_lin in enumerate(x_lins):
+    #             # choose samples that have [x, y, or theta] +- error margin
+    #             # x_error = (x_max-x_min)*x_error_proc
+    #             # while True:
+    #             #     samples = np.where(  ((x_lin-x_error[i+self.S])<=X[:,i+self.S]) 
+    #             #                         & (X[:,i+self.S]<=(x_lin+x_error[i+self.S])))
+    #             #     if len(samples[0]) > 0:
+    #             #         break
+    #             #     else:
+    #             #         x_error = (1+x_error_proc)*x_error
+
+    #             # calc. average over all samples which are close enough to x_lin
+    #             samples = np.where(  ((x_lin-x_error[i+self.S])<=X[:,i+self.S]) 
+    #                                     & (X[:,i+self.S]<=(x_lin+x_error[i+self.S])))
+    #             if len(samples[0])>10:
+    #                 dX_samples[j,i] = np.mean(dX[samples][:,i])
+    #                 dX_samples[j,i+self.S] = np.mean(dX[samples][:,i+self.S])
+
+    #     return dX_samples[~np.isnan(dX_samples).any(axis=1)]
 
 class CSTRSystem(System):
     def __init__(self, args, dev):

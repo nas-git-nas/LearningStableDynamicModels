@@ -56,41 +56,49 @@ class HolohoverModelGrey(ModelGrey):
 
         # TNN: model parameters
         tnn_input_size = 1
-        tnn_hidden1_size = 10
-        tnn_hidden2_size = 20
+        tnn_hidden1_size = 80
+        tnn_hidden2_size = 120
+        tnn_hidden3_size = 40
         tnn_output_size = 1
 
         # TCNN: layers
         self.tnn1_fc1 = nn.Linear(tnn_input_size, tnn_hidden1_size, bias=True)
         self.tnn1_fc2 = nn.Linear(tnn_hidden1_size, tnn_hidden2_size, bias=True)
-        self.tnn1_fc3 = nn.Linear(tnn_hidden2_size, tnn_output_size, bias=True)
+        self.tnn1_fc3 = nn.Linear(tnn_hidden2_size, tnn_hidden3_size, bias=True)
+        self.tnn1_fc4 = nn.Linear(tnn_hidden3_size, tnn_output_size, bias=True)
         self.tnn2_fc1 = nn.Linear(tnn_input_size, tnn_hidden1_size, bias=True)
         self.tnn2_fc2 = nn.Linear(tnn_hidden1_size, tnn_hidden2_size, bias=True)
-        self.tnn2_fc3 = nn.Linear(tnn_hidden2_size, tnn_output_size, bias=True)
+        self.tnn2_fc3 = nn.Linear(tnn_hidden2_size, tnn_hidden3_size, bias=True)
+        self.tnn2_fc4 = nn.Linear(tnn_hidden3_size, tnn_output_size, bias=True)
         self.tnn3_fc1 = nn.Linear(tnn_input_size, tnn_hidden1_size, bias=True)
         self.tnn3_fc2 = nn.Linear(tnn_hidden1_size, tnn_hidden2_size, bias=True)
-        self.tnn3_fc3 = nn.Linear(tnn_hidden2_size, tnn_output_size, bias=True)
+        self.tnn3_fc3 = nn.Linear(tnn_hidden2_size, tnn_hidden3_size, bias=True)
+        self.tnn3_fc4 = nn.Linear(tnn_hidden3_size, tnn_output_size, bias=True)
         self.tnn4_fc1 = nn.Linear(tnn_input_size, tnn_hidden1_size, bias=True)
         self.tnn4_fc2 = nn.Linear(tnn_hidden1_size, tnn_hidden2_size, bias=True)
-        self.tnn4_fc3 = nn.Linear(tnn_hidden2_size, tnn_output_size, bias=True)
+        self.tnn4_fc3 = nn.Linear(tnn_hidden2_size, tnn_hidden3_size, bias=True)
+        self.tnn4_fc4 = nn.Linear(tnn_hidden3_size, tnn_output_size, bias=True)
         self.tnn5_fc1 = nn.Linear(tnn_input_size, tnn_hidden1_size, bias=True)
         self.tnn5_fc2 = nn.Linear(tnn_hidden1_size, tnn_hidden2_size, bias=True)
-        self.tnn5_fc3 = nn.Linear(tnn_hidden2_size, tnn_output_size, bias=True)
+        self.tnn5_fc3 = nn.Linear(tnn_hidden2_size, tnn_hidden3_size, bias=True)
+        self.tnn5_fc4 = nn.Linear(tnn_hidden3_size, tnn_output_size, bias=True)
         self.tnn6_fc1 = nn.Linear(tnn_input_size, tnn_hidden1_size, bias=True)
         self.tnn6_fc2 = nn.Linear(tnn_hidden1_size, tnn_hidden2_size, bias=True)
-        self.tnn6_fc3 = nn.Linear(tnn_hidden2_size, tnn_output_size, bias=True)
+        self.tnn6_fc3 = nn.Linear(tnn_hidden2_size, tnn_hidden3_size, bias=True)
+        self.tnn6_fc4 = nn.Linear(tnn_hidden3_size, tnn_output_size, bias=True)
+        
 
         # Center of mass
         if args.learn_center_of_mass:
-            self.center_of_mass = torch.nn.parameter.Parameter(self.init_center_of_mass, requires_grad=True)
+            self.center_of_mass = torch.nn.parameter.Parameter(self.init_center_of_mass.detach().clone(), requires_grad=True)
         else:
-            self.center_of_mass = self.init_center_of_mass
+            self.center_of_mass = self.init_center_of_mass.detach().clone()
 
         # Inertia around z axis
         if args.learn_inertia:
-            self.inertia = torch.nn.parameter.Parameter(self.init_inertia, requires_grad=True)
+            self.inertia = torch.nn.parameter.Parameter(self.init_inertia.detach().clone(), requires_grad=True)
         else:
-            self.inertia = self.init_inertia
+            self.inertia = self.init_inertia.detach().clone()
 
     def initMotorPosVec(self):
         """
@@ -132,37 +140,49 @@ class HolohoverModelGrey(ModelGrey):
         x_tnn1_tanh1 = self.tanh(x_tnn1_fc1)
         x_tnn1_fc2 = self.tnn1_fc2(x_tnn1_tanh1)
         x_tnn1_tanh2 = self.tanh(x_tnn1_fc2)
-        t1 = self.tnn1_fc3(x_tnn1_tanh2)
+        x_tnn1_fc3 = self.tnn1_fc3(x_tnn1_tanh2)
+        x_tnn1_tanh3 = self.tanh(x_tnn1_fc3)
+        t1 = self.tnn1_fc4(x_tnn1_tanh3)
 
         x_tnn2_fc1 = self.tnn2_fc1(U[:,1].reshape(U.shape[0],1))
         x_tnn2_tanh1 = self.tanh(x_tnn2_fc1)
         x_tnn2_fc2 = self.tnn2_fc2(x_tnn2_tanh1)
         x_tnn2_tanh2 = self.tanh(x_tnn2_fc2)
-        t2 = self.tnn2_fc3(x_tnn2_tanh2)
+        x_tnn2_fc3 = self.tnn2_fc3(x_tnn2_tanh2)
+        x_tnn2_tanh3 = self.tanh(x_tnn2_fc3)
+        t2 = self.tnn2_fc4(x_tnn2_tanh3)
 
         x_tnn3_fc1 = self.tnn3_fc1(U[:,2].reshape(U.shape[0],1))
         x_tnn3_tanh1 = self.tanh(x_tnn3_fc1)
         x_tnn3_fc2 = self.tnn3_fc2(x_tnn3_tanh1)
         x_tnn3_tanh2 = self.tanh(x_tnn3_fc2)
-        t3 = self.tnn3_fc3(x_tnn3_tanh2)
+        x_tnn3_fc3 = self.tnn3_fc3(x_tnn3_tanh2)
+        x_tnn3_tanh3 = self.tanh(x_tnn3_fc3)
+        t3 = self.tnn3_fc4(x_tnn3_tanh3)
 
         x_tnn4_fc1 = self.tnn4_fc1(U[:,3].reshape(U.shape[0],1))
         x_tnn4_tanh1 = self.tanh(x_tnn4_fc1)
         x_tnn4_fc2 = self.tnn4_fc2(x_tnn4_tanh1)
         x_tnn4_tanh2 = self.tanh(x_tnn4_fc2)
-        t4 = self.tnn4_fc3(x_tnn4_tanh2)
+        x_tnn4_fc3 = self.tnn4_fc3(x_tnn4_tanh2)
+        x_tnn4_tanh3 = self.tanh(x_tnn4_fc3)
+        t4 = self.tnn4_fc4(x_tnn4_tanh3)
 
         x_tnn5_fc1 = self.tnn5_fc1(U[:,4].reshape(U.shape[0],1))
         x_tnn5_tanh1 = self.tanh(x_tnn5_fc1)
         x_tnn5_fc2 = self.tnn5_fc2(x_tnn5_tanh1)
         x_tnn5_tanh2 = self.tanh(x_tnn5_fc2)
-        t5 = self.tnn5_fc3(x_tnn5_tanh2)
+        x_tnn5_fc3 = self.tnn5_fc3(x_tnn5_tanh2)
+        x_tnn5_tanh3 = self.tanh(x_tnn5_fc3)
+        t5 = self.tnn5_fc4(x_tnn5_tanh3)
 
         x_tnn6_fc1 = self.tnn6_fc1(U[:,5].reshape(U.shape[0],1))
         x_tnn6_tanh1 = self.tanh(x_tnn6_fc1)
         x_tnn6_fc2 = self.tnn6_fc2(x_tnn6_tanh1)
         x_tnn6_tanh2 = self.tanh(x_tnn6_fc2)
-        t6 = self.tnn6_fc3(x_tnn6_tanh2)
+        x_tnn6_fc3 = self.tnn6_fc3(x_tnn6_tanh2)
+        x_tnn6_tanh3 = self.tanh(x_tnn6_fc3)
+        t6 = self.tnn6_fc4(x_tnn6_tanh3)
 
         return torch.concat((t1,t2,t3,t4,t5,t6), axis=1)
 

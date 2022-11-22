@@ -71,8 +71,8 @@ class Learn():
                 # print(f"acc real: {torch.mean(dX_real[:,3:6], axis=0)}, acc train: {torch.mean(dX_X[:,3:6], axis=0)}")              
 
                 # calc. loss
-                loss = self.lossFunction(dX_X, dX_real)
-                loss_tr += loss
+                loss = self.lossFunction2(dX_X, dX_real)
+                loss_tr += loss.detach().float()
 
                 # backwards pass through models
                 self.optimizer.zero_grad()
@@ -86,7 +86,7 @@ class Learn():
 
             # evaluate testing set
             dX_X = self.model.forward(X_te, U_te)
-            self.losses_te.append(self.lossFunction(dX_X, dX_te))
+            self.losses_te.append(self.lossFunction2(dX_X, dX_te).detach().float())
 
             # print results
             end_time =time.time()
@@ -94,6 +94,7 @@ class Learn():
 
         print(f"Center of mass: {self.model.center_of_mass}")
         print(f"Inertia: {self.model.inertia}")
+        print(f"Inertia init.: {self.model.init_inertia}")
 
     def lossFunction(self, dX_X, dX_real):
         """

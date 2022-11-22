@@ -15,26 +15,79 @@ class Plot():
             self.quiver_scale = 50.0
         elif self.learn.model_type == "CSTR":
             self.quiver_scale = 0.8
+        elif self.learn.model_type == "HolohoverGrey":
+            self.quiver_scale = 1
 
-    # def greyModel(self, u_eq):
-    #     # define control input, u_hat is bounded by [-1,1]
-    #     Ueq = u_eq.reshape((1,self.sys.M))
-    #     Umax = torch.ones((1,self.sys.M)) 
+    def greyModel(self, u_eq):
+        # define control input, u_hat is bounded by [-1,1]
+        Ueq = u_eq.reshape((1,self.sys.M))
+        Umax = torch.ones((1,self.sys.M)) 
 
-    #     xmin = self.sys.x_min - (self.sys.x_max-self.sys.x_min)/4
-    #     xmax = self.sys.x_max + (self.sys.x_max-self.sys.x_min)/4
+        xmin = self.sys.x_min - (self.sys.x_max-self.sys.x_min)/4
+        xmax = self.sys.x_max + (self.sys.x_max-self.sys.x_min)/4
 
-    #     fig, axs = plt.subplots(nrows=4, ncols=2, figsize =(10, 18))
+        fig, axs = plt.subplots(nrows=2, ncols=2, figsize =(10, 18))
 
-    #     self.modelLoss(axs[0,0])
-    #     self.modelLoss(axs[0,1], log_scale=True)
+        self.modelLoss(axs[0,0])
+        self.modelLoss(axs[0,1], log_scale=True)
 
-    #     self.modelRealDyn(axs[2,0], xmin, xmax, Ueq)
-    #     self.modelLearnedDyn(axs[2,1], xmin, xmax, Ueq)
-    #     self.modelRealDyn(axs[3,0], xmin, xmax, Ueq)
-    #     self.modelLearnedDyn(axs[3,1], xmin, xmax, Ueq)
+        self.greyAcc(axs[1,0], axs[1,1], dim=0)
 
-    #     plt.savefig(os.path.join(self.learn.model_dir, self.learn.model_name + "_figure"))       
+        plt.savefig(os.path.join(self.learn.model_dir, self.learn.model_name + "_figure"))   
+
+
+    # def greyAcc(self, ax1, ax2, dim, u_error_proc=0.2):
+
+    #     X, U, dX = self.sys.getData(u_map=True)
+
+    #     X = X.cpu().numpy()
+    #     dX = dX.cpu().numpy()
+    #     U = U.cpu().numpy()
+
+    #     u_max = np.max(U, axis=0)
+    #     u_min = np.min(U, axis=0)
+    #     u_error = (u_max-u_min)*u_error_proc
+
+    #     U_lin = np.zeros((int(1/u_error_proc), self.sys.M))
+    #     U_lin[:,dim] = np.linspace(u_min[dim], u_max[dim], int(1/u_error_proc))
+
+    #     dX_real = np.empty((U_lin.shape[0], self.sys.D)) * np.nan
+    #     dX_learn = np.empty((U_lin.shape[0], self.sys.D)) * np.nan
+    #     for j in range(U_lin.shape[0]):
+    #         Udes = U_lin[j,:]
+    #         # choose samples that have Udes +- u_error (error margin)
+    #         indices = np.ones(X.shape[0], dtype=bool)
+    #         for i in range(self.sys.M):
+    #             indices = indices & ((Udes[i]-u_error[i])<U[:,i]) & (U[:,i]<(Udes[i]+u_error[i]))
+    #         X_samp = X[np.where(indices)]
+    #         U_samp = U[np.where(indices)]
+    #         dX_real[j,:] = np.mean(dX[np.where(indices)], axis=0)
+            
+
+    #         # calc. learned system dynamics
+    #         with torch.no_grad():
+    #             dX_samp_learn = self.model.forward(torch.tensor(X_samp), torch.tensor(U_samp))
+    #         dX_learn[j,:] = torch.mean(dX_samp_learn, axis=0)
+
+    #     # dX_real = dX_real[~np.isnan(dX_real).any(axis=1)]
+    #     # dX_learn = dX_learn[~np.isnan(dX_learn).any(axis=1)]
+        
+    #     ax1.set_title(f'Real x acceleration)')
+    #     ax1.set_xlabel(f'U[{dim}]')
+    #     ax1.set_ylabel(f'acceleration')
+    #     ax1.plot(U_lin[:,dim], dX_real[:,3], label="ddx")
+    #     ax1.plot(U_lin[:,dim], dX_real[:,4], label="ddy")
+    #     ax1.plot(U_lin[:,dim], dX_real[:,5], label="ddtheta")
+    #     ax1.legend()
+
+    #     ax2.set_title('Learned x acceleration)')
+    #     ax2.set_xlabel(f'U[{dim}]')
+    #     ax2.set_ylabel(f'acceleration')
+    #     ax2.plot(U_lin[:,dim], dX_learn[:,3], label="ddx")
+    #     ax2.plot(U_lin[:,dim], dX_learn[:,4], label="ddy")
+    #     ax2.plot(U_lin[:,dim], dX_learn[:,5], label="ddtheta")
+    #     ax2.legend()
+           
 
     def fakeModel(self, u_eq):
 
@@ -65,7 +118,9 @@ class Plot():
         axis.set_title(f"Learning rate: {self.learn.learning_rate}, nb. epochs: {self.learn.nb_epochs}")
         axis.set_xlabel('nb. batches')
         axis.set_ylabel('loss')
-        axis.plot(self.learn.loss_epochs)
+        axis.plot(self.learn.losses_tr, label="training loss")
+        axis.plot(self.learn.losses_te, label="testing loss")
+        axis.legend()
 
         if log_scale:
             axis.set_yscale("log")
@@ -153,22 +208,31 @@ class Plot():
                                             height=(self.sys.x_max[1]-self.sys.x_min[1]), facecolor='none', edgecolor="g")     
         axis.add_patch(rect_training)
 
-    def modelLearnedDyn(self, axis, xmin, xmax, U):
+    def modelApproxDyn(self, axis, U, dim=0):
+        # approximate dynamics by sampling data in a certain region
+        dX = self.sys.sampleX(Udes=U, U_hat=True)
+
+        axis.set_title('Real dynamics (U='+str(self.sys.uMapInv(U[0,:]).numpy())+')')
+        axis.set_xlabel('x[0]')
+        axis.set_ylabel('x[1]')
+        axis.plot(dX[:,dim], dX[:,dim+self.sys.S])
+
+    def modelLearnedDyn(self, axis, xmin, xmax, U, dim=0):
 
         X, _, _ = self.modelGenX(xmin, xmax)
         U = U.repeat(X.shape[0],1)
 
         # calc. learned system dynamics
         with torch.no_grad():
-            dX_opt = self.model.forward(X, U)      
+            dX = self.model.forward(X, U)      
 
         axis.set_title('Learned dynamics (U='+str(self.sys.uMapInv(U[0,:]).numpy())+')')
         axis.set_xlabel('x[0]')
         axis.set_ylabel('x[1]')
-        axis.quiver(X[:,0], X[:,1], dX_opt[:,0], dX_opt[:,1], scale=self.quiver_scale)
+        axis.quiver(X[:,dim], X[:,dim+self.sys.S], dX[:,dim], dX[:,dim+self.sys.S], scale=self.quiver_scale)
         axis.set_aspect('equal')
-        rect_training = patches.Rectangle((self.sys.x_min[0],self.sys.x_min[1]), width=(self.sys.x_max[0]-self.sys.x_min[0]), \
-                                            height=(self.sys.x_max[1]-self.sys.x_min[1]), facecolor='none', edgecolor="g")   
+        rect_training = patches.Rectangle((self.sys.x_min[dim],self.sys.x_min[dim+self.sys.S]), width=(self.sys.x_max[dim]-self.sys.x_min[dim]), \
+                                            height=(self.sys.x_max[dim+self.sys.S]-self.sys.x_min[dim+self.sys.S]), facecolor='none', edgecolor="g")        
         axis.add_patch(rect_training)
         
 
@@ -205,7 +269,28 @@ class Plot():
 
         plt.show()
 
-    def simTrajectory(self, axis, X_seq, nb_steps, xmin, xmax, filter_on=True):
+    def simGrey(self, Xreal_seq, Xlearn_seq):
+        """
+        Plot simulation
+        Args:
+            
+        """
+        nb_steps = Xreal_seq.shape[0]
+        xmin = np.minimum(np.min(Xreal_seq, axis=0), np.min(Xlearn_seq, axis=0))
+        xmax = np.maximum(np.max(Xreal_seq, axis=0), np.max(Xlearn_seq, axis=0))
+        xmin -= (xmax-xmin)/6
+        xmax += (xmax-xmin)/6
+
+        fig, axs = plt.subplots(nrows=2, ncols=2, figsize =(9, 9))
+
+        self.modelLoss(axs[0,0])
+        self.modelLoss(axs[0,1], log_scale=True)               
+        self.simTrajectory(axs[1,0], Xreal_seq, nb_steps-1, xmin, xmax, title="Real trajectory")
+        self.simTrajectory(axs[1,1], Xlearn_seq, nb_steps-1, xmin, xmax, title="Learned trajectory")
+
+        plt.savefig(os.path.join(self.learn.model_dir, self.learn.model_name + "_figure"))
+
+    def simTrajectory(self, axis, X_seq, nb_steps, xmin, xmax, title=False):
         """
         Plot state sequence
         Args:
@@ -228,10 +313,10 @@ class Plot():
         axis.set_ylim([xmin[1], xmax[1]])
         axis.set_xlabel('x[0]')
         axis.set_ylabel('x[1]')
-        if filter_on:
-            axis.set_title(f"Trajectory: safety filter on")
+        if title:
+            axis.set_title(title)
         else:
-            axis.set_title(f"Trajectory: safety filter off")
+            axis.set_title(f"Trajectory")
 
     def simControlInput(self, axis, Udes_seq, Usafe_seq):
         """
