@@ -294,14 +294,19 @@ class Preprocess():
 
         for exp in self.force:
             if plot:
-                fig, axs = plt.subplots(nrows=3, ncols=2, figsize =(12, 8)) 
+                fig, axs = plt.subplots(nrows=2, ncols=3, figsize =(16, 8)) 
                 axs[0,0].plot(self.tforce[exp], self.force[exp][:,0], color="b", label="Thrust x")
                 axs[0,1].plot(self.tforce[exp], self.force[exp][:,1], color="g", label="Thrust y")
                 axs[0,0].set_title(f"Thrust x")
                 axs[0,1].set_title(f"Thrust y")
                 axs[1,0].set_title(f"Thrust x (offset removed)")   
                 axs[1,1].set_title(f"Thrust y (offset removed)")
-                axs[2,0].set_title(f"Thrust norm (offset removed)")
+                axs[1,2].set_title(f"Thrust norm (offset removed)")
+
+                offset_plot_x = []
+                offset_plot_y = []
+                offset_plot_t = []
+
 
             for mot in thrusts:
                 for sig in thrusts[mot]:
@@ -317,24 +322,55 @@ class Preprocess():
                     thrusts[mot][sig]["std"] = np.std(thrusts[mot][sig]["norm"])
             
                     if plot:
-                        axs[0,0].scatter(self.tforce[exp][bg_idx], bg_x, color="r")
-                        axs[0,1].scatter(self.tforce[exp][bg_idx], bg_y, color="r")
-                        axs[1,0].plot(thrusts[mot][sig]["time"], thrusts[mot][sig]["force"][:,0], color="b", label="Thrust x")                    
-                        axs[1,1].plot(thrusts[mot][sig]["time"], thrusts[mot][sig]["force"][:,1], color="g", label="Thrust y")
-                        axs[2,0].plot(thrusts[mot][sig]["time"], thrusts[mot][sig]["norm"], color="b", label="Thrust norm")
-
+                        offset_plot_x.append(bg_x)
+                        offset_plot_y.append(bg_y)
+                        offset_plot_t.append(self.tforce[exp][bg_idx])
+                        axs[1,0].plot(thrusts[mot][sig]["time"], thrusts[mot][sig]["force"][:,0], color="b")                    
+                        axs[1,1].plot(thrusts[mot][sig]["time"], thrusts[mot][sig]["force"][:,1], color="g")
+                        axs[1,2].plot(thrusts[mot][sig]["time"], thrusts[mot][sig]["norm"], color="m")
             if plot:
+                axs[0,0].plot(offset_plot_t, offset_plot_x, color="r", label="Offset")
+                axs[0,1].plot(offset_plot_t, offset_plot_y, color="r", label="Offset")
+                axs[1,0].hlines(0, offset_plot_t[0], offset_plot_t[-1], color="r", label="Thrust x")
+                axs[1,1].hlines(0, offset_plot_t[0], offset_plot_t[-1], color="r", label="Thrust y")
+                axs[1,0].plot([], [], color="b", label="Thrust x")
+                axs[1,1].plot([], [], color="g", label="Thrust y")
+                axs[1,2].plot([], [], color="m", label="Thrust norm")
+                axs[0,0].set_xlabel("time [s]")
+                axs[0,0].set_ylabel("force [N]")
+                axs[0,1].set_xlabel("time [s]")
+                axs[0,1].set_ylabel("force [N]")
+                axs[1,0].set_xlabel("time [s]")
+                axs[1,0].set_ylabel("force [N]")
+                axs[1,1].set_xlabel("time [s]")
+                axs[1,1].set_ylabel("force [N]")
+                axs[1,2].set_xlabel("time [s]")
+                axs[1,2].set_ylabel("force [N]")
+
+                axs[0,0].legend()
+                axs[0,1].legend()
+                axs[1,0].legend()
+                axs[1,1].legend()
+                axs[1,2].legend()
+                fig.delaxes(axs[0,2])
                 plt.show()
+    
         if plot:
             for exp in self.force:
-                fig, axs = plt.subplots(nrows=2, ncols=3, figsize =(8, 8))             
+                fig, axs = plt.subplots(nrows=2, ncols=3, figsize =(12, 8))             
                 for i, mot in enumerate(thrusts):
                     k = int(i/len(axs[0]))
                     l = i % len(axs[0])
 
                     for sig in thrusts[mot]:
-                        axs[k,l].scatter(sig, thrusts[mot][sig]["mean"], color="b", label="Mean thrust")
+                        axs[k,l].set_title(f"Motor {mot+1}")
+                        axs[k,l].scatter(sig, thrusts[mot][sig]["mean"], color="b")
                         axs[k,l].errorbar(sig, thrusts[mot][sig]["mean"], thrusts[mot][sig]["std"], color="r", fmt='.k')
+                    axs[k,l].scatter([], [], color="b", label="Mean")
+                    axs[k,l].errorbar([], [], [], color="r", fmt='.k', label="Std.")
+                    axs[k,l].set_xlabel("signal")
+                    axs[k,l].set_ylabel("thrust [N]")
+                    axs[k,l].legend()
                 plt.show()
 
         return thrusts
@@ -343,17 +379,22 @@ class Preprocess():
         
         for mot in thrusts:
             signal = []
-            thrust = []
+            thrust_mean = []
+            thrust_std = []
             for sig in thrusts[mot]:
                 signal.append(sig)
-                thrust.append(thrusts[mot][sig]["mean"])
+                thrust_mean.append(thrusts[mot][sig]["mean"])
+                thrust_std.append(thrusts[mot][sig]["std"])
 
-            fig, axs = plt.subplots(nrows=2, ncols=3, figsize =(14, 8))
+            if plot:
+                fig, axs = plt.subplots(nrows=2, ncols=3, figsize =(12, 8))
+                fig.suptitle(f"Motor {mot+1}")
+
             for j, deg in enumerate(range(1,7)):
                 k = int(j/len(axs[0]))
                 l = j % len(axs[0])
 
-                coeff = np.polyfit(np.array(signal, dtype=float), np.array(thrust, dtype=float), deg=deg)
+                coeff = np.polyfit(signal, thrust_mean, deg=deg)
 
                 lin_x = np.linspace(0, 1, 100)
                 lin_X = np.zeros((100,deg+1))
@@ -366,17 +407,48 @@ class Preprocess():
                 for i in range(stat_X.shape[1]):
                     stat_X[:,i] = np.power(stat_x, i)
                 stat_approx = stat_X @ np.flip(coeff)
-                _, _, rvalue, _, _ = stats.linregress(stat_approx, np.array(thrust, dtype=float))
+                _, _, rvalue, _, _ = stats.linregress(stat_approx, np.array(thrust_mean, dtype=float))
 
-                axs[k,l].scatter(signal, thrust, color="b", label="Meas.")
-                axs[k,l].plot(lin_x, thrust_approx, color="g", label="Approx.")
-                axs[k,l].set_title(f"Deg={deg} (R^2={np.round(rvalue**2, 4)})")
-                axs[k,l].set_xlabel("Signal")
-                axs[k,l].set_ylabel("Thrust")
-                axs[k,l].legend()
+                if plot:
+                    axs[k,l].scatter(signal, thrust_mean, color="b", label="Meas.")
+                    axs[k,l].errorbar(signal, thrust_mean, thrust_std, color="r", fmt='.k', label="Std.")
+                    axs[k,l].plot(lin_x, thrust_approx, color="g", label="Approx.")
+                    axs[k,l].set_title(f"Deg={deg} (R^2={np.round(rvalue**2, 4)})")
+                    axs[k,l].set_xlabel("Signal")
+                    axs[k,l].set_ylabel("Thrust")
+                    axs[k,l].legend()
 
+            if plot:
+                plt.show()
+    
+        if plot:
+            fig, axs = plt.subplots(nrows=1, ncols=1, figsize =(8, 8))
 
+            for mot in thrusts:
+                signal = []
+                thrust_mean = []
+                thrust_std = []
+                for sig in thrusts[mot]:
+                    signal.append(sig)
+                    thrust_mean.append(thrusts[mot][sig]["mean"])
+                    thrust_std.append(thrusts[mot][sig]["std"])
+
+                coeff = np.polyfit(signal, thrust_mean, deg=3)
+
+                lin_x = np.linspace(0, 1, 100)
+                lin_X = np.zeros((100,4))
+                for i in range(lin_X.shape[1]):
+                    lin_X[:,i] = np.power(lin_x, i)
+                thrust_approx = lin_X @ np.flip(coeff)
+
+                axs.plot(lin_x, thrust_approx, label=f"Motor {mot}")
+                axs.set_title(f"Thrust approx. (poly. degree 3)")
+                axs.set_xlabel("Signal")
+                axs.set_ylabel("Thrust")
+                axs.legend()
             plt.show()
+
+            
 
 
 
@@ -397,7 +469,7 @@ def main_signal2thrust():
     pp = Preprocess(series="signal_20221121")
     pp.loadData()
     pp.stamp2seconds() 
-    thrusts = pp.getThrust(plot=False)
+    thrusts = pp.getThrust(plot=True)
     pp.approxThrust(thrusts, plot=True)
 
 if __name__ == "__main__":
