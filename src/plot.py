@@ -31,8 +31,6 @@ class Plot():
         self.modelLoss(axs[0,0])
         self.modelLoss(axs[0,1], log_scale=True)
 
-        self.greyAcc(axs[1,0], axs[1,1], dim=0)
-
         plt.savefig(os.path.join(self.learn.model_dir, self.learn.model_name + "_figure"))   
 
 

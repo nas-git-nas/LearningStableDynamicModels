@@ -3,6 +3,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from args import Args
+
 class ModelGrey(nn.Module):
     def __init__(self, dev):
         super(ModelGrey, self).__init__()
@@ -53,52 +55,47 @@ class HolohoverModelGrey(ModelGrey):
         self.motors_vec, self.motors_pos = self.initMotorPosVec() # unit vectors of thrust from motors, motor positions
         self.init_center_of_mass = torch.zeros(self.S) # initial center of mass
         self.init_inertia = torch.tensor([0.0003599]) # intitial inertia
+        self.init_signal2thrust = torch.tensor([[0.19089428, 0.73228747, -0.27675822], # initial signal2thrust coeff.
+                                                [0.21030774, 0.71018331, -0.26599642], # tensor (M, poly_expand_U)
+                                                [0.08407954, 1.01239162, -0.47014436], # for each motor [a1, a2, a3]
+                                                [0.23272980, 0.63304683, -0.19689546], # where thrust = a1*u + a2*u^2 + a3*u^3
+                                                [0.16751077, 0.85337578, -0.34435633],
+                                                [0.19129567, 0.82140377, -0.33533427] ])
 
-        # TNN: model parameters
-        tnn_input_size = 1
-        tnn_hidden1_size = 80
-        tnn_hidden2_size = 120
-        tnn_hidden3_size = 40
-        tnn_output_size = 1
-
-        # TCNN: layers
-        self.tnn1_fc1 = nn.Linear(tnn_input_size, tnn_hidden1_size, bias=True)
-        self.tnn1_fc2 = nn.Linear(tnn_hidden1_size, tnn_hidden2_size, bias=True)
-        self.tnn1_fc3 = nn.Linear(tnn_hidden2_size, tnn_hidden3_size, bias=True)
-        self.tnn1_fc4 = nn.Linear(tnn_hidden3_size, tnn_output_size, bias=True)
-        self.tnn2_fc1 = nn.Linear(tnn_input_size, tnn_hidden1_size, bias=True)
-        self.tnn2_fc2 = nn.Linear(tnn_hidden1_size, tnn_hidden2_size, bias=True)
-        self.tnn2_fc3 = nn.Linear(tnn_hidden2_size, tnn_hidden3_size, bias=True)
-        self.tnn2_fc4 = nn.Linear(tnn_hidden3_size, tnn_output_size, bias=True)
-        self.tnn3_fc1 = nn.Linear(tnn_input_size, tnn_hidden1_size, bias=True)
-        self.tnn3_fc2 = nn.Linear(tnn_hidden1_size, tnn_hidden2_size, bias=True)
-        self.tnn3_fc3 = nn.Linear(tnn_hidden2_size, tnn_hidden3_size, bias=True)
-        self.tnn3_fc4 = nn.Linear(tnn_hidden3_size, tnn_output_size, bias=True)
-        self.tnn4_fc1 = nn.Linear(tnn_input_size, tnn_hidden1_size, bias=True)
-        self.tnn4_fc2 = nn.Linear(tnn_hidden1_size, tnn_hidden2_size, bias=True)
-        self.tnn4_fc3 = nn.Linear(tnn_hidden2_size, tnn_hidden3_size, bias=True)
-        self.tnn4_fc4 = nn.Linear(tnn_hidden3_size, tnn_output_size, bias=True)
-        self.tnn5_fc1 = nn.Linear(tnn_input_size, tnn_hidden1_size, bias=True)
-        self.tnn5_fc2 = nn.Linear(tnn_hidden1_size, tnn_hidden2_size, bias=True)
-        self.tnn5_fc3 = nn.Linear(tnn_hidden2_size, tnn_hidden3_size, bias=True)
-        self.tnn5_fc4 = nn.Linear(tnn_hidden3_size, tnn_output_size, bias=True)
-        self.tnn6_fc1 = nn.Linear(tnn_input_size, tnn_hidden1_size, bias=True)
-        self.tnn6_fc2 = nn.Linear(tnn_hidden1_size, tnn_hidden2_size, bias=True)
-        self.tnn6_fc3 = nn.Linear(tnn_hidden2_size, tnn_hidden3_size, bias=True)
-        self.tnn6_fc4 = nn.Linear(tnn_hidden3_size, tnn_output_size, bias=True)
+        # we measured the signal2thrust coeff. of degree=3, 
+        # if a different polynomial expansion is desired the shape of init_signal2thrust must be adapted                           
+        if args.poly_expand_U < 3: # desired polynomial expansion has smaller degree than measured coeff. -> ignore higher coeff.
+            self.init_signal2thrust = self.init_signal2thrust[:,:args.poly_expand_U]
+        if args.poly_expand_U > 3: # desired polynomial expansion has larger degree than measured coeff. -> add coeff. = zero
+            padding = torch.zeros(self.M, args.poly_expand_U-3)
+            self.init_signal2thrust = torch.concat((self.init_signal2thrust, padding), axis=1)
         
 
+        # signal2thrust mapping
+        tnn_input_size = args.poly_expand_U
+        tnn_output_size = 1
+        self.tnn_sig2thr_fcts = [nn.Linear(tnn_input_size, tnn_output_size, bias=False, dtype=torch.float32) for _ in range(self.M)]
+
+        for i, lin_fct in enumerate(self.tnn_sig2thr_fcts):
+            lin_fct.weight = torch.nn.parameter.Parameter(self.init_signal2thrust[i,:].detach().clone().reshape(1, args.poly_expand_U))
+            if args.learn_signal2thrust:
+                lin_fct.weight.requires_grad = True
+            else:
+                lin_fct.weight.requires_grad = False        
+
         # Center of mass
+        self.center_of_mass = torch.nn.parameter.Parameter(self.init_center_of_mass.detach().clone())
         if args.learn_center_of_mass:
-            self.center_of_mass = torch.nn.parameter.Parameter(self.init_center_of_mass.detach().clone(), requires_grad=True)
+            self.center_of_mass.requires_grad = True
         else:
-            self.center_of_mass = self.init_center_of_mass.detach().clone()
+            self.center_of_mass.requires_grad = False
 
         # Inertia around z axis
+        self.inertia = torch.nn.parameter.Parameter(self.init_inertia.detach().clone())
         if args.learn_inertia:
-            self.inertia = torch.nn.parameter.Parameter(self.init_inertia.detach().clone(), requires_grad=True)
+            self.inertia.requires_grad = True
         else:
-            self.inertia = self.init_inertia.detach().clone()
+            self.inertia.requires_grad = False
 
     def initMotorPosVec(self):
         """
@@ -133,58 +130,17 @@ class HolohoverModelGrey(ModelGrey):
     def signal2thrust(self, U):
         """
         Description: motor signal to motor thrust mapping
-        In U: motor signals batch, tensor (N x M)
-        Out thrust: motor thrust, tensor (N x M)
+        In U: motor signals batch, tensor (N, M*poly_expand_U)
+        Out thrust: motor thrust, tensor (N, M)
         """
-        x_tnn1_fc1 = self.tnn1_fc1(U[:,0].reshape(U.shape[0],1))
-        x_tnn1_tanh1 = self.tanh(x_tnn1_fc1)
-        x_tnn1_fc2 = self.tnn1_fc2(x_tnn1_tanh1)
-        x_tnn1_tanh2 = self.tanh(x_tnn1_fc2)
-        x_tnn1_fc3 = self.tnn1_fc3(x_tnn1_tanh2)
-        x_tnn1_tanh3 = self.tanh(x_tnn1_fc3)
-        t1 = self.tnn1_fc4(x_tnn1_tanh3)
+        assert U.shape[1]%self.M == 0
+        deg = int(U.shape[1] / self.M) # degree of polynomial expansion
 
-        x_tnn2_fc1 = self.tnn2_fc1(U[:,1].reshape(U.shape[0],1))
-        x_tnn2_tanh1 = self.tanh(x_tnn2_fc1)
-        x_tnn2_fc2 = self.tnn2_fc2(x_tnn2_tanh1)
-        x_tnn2_tanh2 = self.tanh(x_tnn2_fc2)
-        x_tnn2_fc3 = self.tnn2_fc3(x_tnn2_tanh2)
-        x_tnn2_tanh3 = self.tanh(x_tnn2_fc3)
-        t2 = self.tnn2_fc4(x_tnn2_tanh3)
+        thrust = torch.zeros((U.shape[0], self.M), dtype=torch.float32)
+        for i, lin_fct in enumerate(self.tnn_sig2thr_fcts):
+            thrust[:,i] = lin_fct(U[:,int(i*deg):int((i+1)*deg)]).flatten()
 
-        x_tnn3_fc1 = self.tnn3_fc1(U[:,2].reshape(U.shape[0],1))
-        x_tnn3_tanh1 = self.tanh(x_tnn3_fc1)
-        x_tnn3_fc2 = self.tnn3_fc2(x_tnn3_tanh1)
-        x_tnn3_tanh2 = self.tanh(x_tnn3_fc2)
-        x_tnn3_fc3 = self.tnn3_fc3(x_tnn3_tanh2)
-        x_tnn3_tanh3 = self.tanh(x_tnn3_fc3)
-        t3 = self.tnn3_fc4(x_tnn3_tanh3)
-
-        x_tnn4_fc1 = self.tnn4_fc1(U[:,3].reshape(U.shape[0],1))
-        x_tnn4_tanh1 = self.tanh(x_tnn4_fc1)
-        x_tnn4_fc2 = self.tnn4_fc2(x_tnn4_tanh1)
-        x_tnn4_tanh2 = self.tanh(x_tnn4_fc2)
-        x_tnn4_fc3 = self.tnn4_fc3(x_tnn4_tanh2)
-        x_tnn4_tanh3 = self.tanh(x_tnn4_fc3)
-        t4 = self.tnn4_fc4(x_tnn4_tanh3)
-
-        x_tnn5_fc1 = self.tnn5_fc1(U[:,4].reshape(U.shape[0],1))
-        x_tnn5_tanh1 = self.tanh(x_tnn5_fc1)
-        x_tnn5_fc2 = self.tnn5_fc2(x_tnn5_tanh1)
-        x_tnn5_tanh2 = self.tanh(x_tnn5_fc2)
-        x_tnn5_fc3 = self.tnn5_fc3(x_tnn5_tanh2)
-        x_tnn5_tanh3 = self.tanh(x_tnn5_fc3)
-        t5 = self.tnn5_fc4(x_tnn5_tanh3)
-
-        x_tnn6_fc1 = self.tnn6_fc1(U[:,5].reshape(U.shape[0],1))
-        x_tnn6_tanh1 = self.tanh(x_tnn6_fc1)
-        x_tnn6_fc2 = self.tnn6_fc2(x_tnn6_tanh1)
-        x_tnn6_tanh2 = self.tanh(x_tnn6_fc2)
-        x_tnn6_fc3 = self.tnn6_fc3(x_tnn6_tanh2)
-        x_tnn6_tanh3 = self.tanh(x_tnn6_fc3)
-        t6 = self.tnn6_fc4(x_tnn6_tanh3)
-
-        return torch.concat((t1,t2,t3,t4,t5,t6), axis=1)
+        return thrust
 
     def thrust2acc(self, thrust, X):
         """       
@@ -243,14 +199,23 @@ def main():
         dev = "cpu"
     device = torch.device(dev) 
 
-    model = HolohoverModelGrey(dev=device)
+    args = Args(model_type="HolohoverGrey")
+    model = HolohoverModelGrey(args=args, dev=device)
 
-    thrust = torch.tensor( [[1,0,1,0,0,0],
-                            [0,0,2,0,2,0]])
-    X = torch.tensor(  [[0,0,0.7854,0,0,0],
-                        [0,0,3.142,0,0,0]])
+    U = torch.tensor(  [[1.0, 1.0, 1.0, 0.0 ,0.0 ,0.0, 1.0, 1.0, 1.0, 0.0 ,0.0 ,0.0, 0.0, 0.0, 0.0, 0.0 ,0.0 ,0.0],
+                        [1.0, 1.0, 1.0, 0.0 ,0.0 ,0.0, 1.0, 1.0, 1.0, 0.0 ,0.0 ,0.0, 0.0, 0.0, 0.0, 0.0 ,0.0 ,0.0]])
 
-    acc = model.thrust2acc(thrust, X)
+    # U = torch.tensor(  [[1.0, 1.0, 1.0, 0.0 ,0.0 ,0.0],
+    #                     [1.0, 1.0, 1.0, 0.0 ,0.0 ,0.0]])
+
+    thrust = model.signal2thrust(U)
+    print(thrust)
+
+    # X = torch.tensor(  [[0,0,0.7854,0,0,0],
+    #                     [0,0,3.142,0,0,0]])
+
+    # acc = model.thrust2acc(thrust, X)
+
 
 if __name__ == "__main__":
     main()  

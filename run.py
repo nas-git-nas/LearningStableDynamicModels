@@ -1,5 +1,4 @@
 import torch
-import argparse
 
 from src.args import Args
 from src.system import DHOSystem, CSTRSystem, HolohoverSystem
@@ -63,12 +62,12 @@ def main():
 
     # plot results
     plot = Plot(dev=device, model=model, system=sys, learn=ld)
-    # plot.greyModel(ueq)
+    plot.greyModel(ueq)
 
     # simulate system
-    sim = Simulation(sys, model)
-    Xreal_seq, Xlearn_seq = sim.simGrey()
-    plot.simGrey(Xreal_seq, Xlearn_seq)
+    # sim = Simulation(sys, model)
+    # Xreal_seq, Xlearn_seq = sim.simGrey()
+    # plot.simGrey(Xreal_seq, Xlearn_seq)
     
 
 if __name__ == "__main__":

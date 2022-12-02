@@ -6,8 +6,6 @@ import shutil
 import torch
 
 
-
-
 # torch.autograd.set_detect_anomaly(True)
 
 
@@ -56,23 +54,33 @@ class Learn():
         else:
             self.sys.generateData(self.batch_size*self.nb_batches)
 
+
+        # get data and split it into training and testing sets
+        X_data, U_data, dX_data = self.sys.getData(u_map=True)
+        print(f"shape X_data: {X_data.shape}, U_data: {U_data.shape}, dX_data: {dX_data.shape}")
+        X_tr, X_te, U_tr, U_te, dX_tr, dX_te = self.splitData(X_data, U_data, dX_data)
         
         for j in range(self.nb_epochs):
             start_time = time.time()
 
-            # get data and split it into training and testing sets
-            X_tr, X_te, U_tr, U_te, dX_tr, dX_te = self.splitData()
-
-            loss_tr = 0
+            loss_tr = []
             for X, U, dX_real in self.iterData(X_tr, U_tr, dX_tr):
+
+                print(f"shape X: {X.shape}, U: {U.shape}, dX_real: {dX_real.shape}")
               
                 # forward pass through models
                 dX_X = self.model.forward(X, U) # (N,D)
-                # print(f"acc real: {torch.mean(dX_real[:,3:6], axis=0)}, acc train: {torch.mean(dX_X[:,3:6], axis=0)}")              
+                # print(f"acc real: {torch.mean(dX_real[:,3:6], axis=0)}, acc train: {torch.mean(dX_X[:,3:6], axis=0)}")    
+                # 
+
+                print(f"shape X: {X.shape}, U: {U.shape}, dX: {dX_X.shape}")          
 
                 # calc. loss
-                loss = self.lossFunction2(dX_X, dX_real)
-                loss_tr += loss.detach().float()
+                loss = self.lossFunction(dX_X, dX_real)
+                loss_tr.append(loss.detach().clone().float())
+
+                print(f"batch loss: {loss.detach().clone().float()}") 
+                print(f"mean error: {np.mean(np.power((dX_X-dX_real).detach().numpy(), 2), axis=0)}")
 
                 # backwards pass through models
                 self.optimizer.zero_grad()
@@ -82,19 +90,20 @@ class Learn():
                 # print(f"trainting loss = {loss}")
 
             # avg. training losses
-            self.losses_tr.append(loss_tr / np.ceil(X_tr.shape[0]/self.batch_size))
+            self.losses_tr.append(np.mean(loss_tr))
 
             # evaluate testing set
-            dX_X = self.model.forward(X_te, U_te)
-            self.losses_te.append(self.lossFunction2(dX_X, dX_te).detach().float())
+            with torch.no_grad():
+                dX_X = self.model.forward(X_te, U_te)
+                self.losses_te.append(self.lossFunction(dX_X, dX_te).detach().clone().float())
 
             # print results
             end_time =time.time()
             print(f"Epoch {j}: \telapse time = {np.round(end_time-start_time,3)}, \ttesting loss = {self.losses_te[-1]}, \ttraining loss = {self.losses_tr[-1]}")
 
-        print(f"Center of mass: {self.model.center_of_mass}")
-        print(f"Inertia: {self.model.inertia}")
-        print(f"Inertia init.: {self.model.init_inertia}")
+        print(f"Center of mass: {self.model.center_of_mass}, Center of mass init.: {self.model.init_center_of_mass}\n")
+        print(f"Inertia: {self.model.inertia}, Inertia init.: {self.model.init_inertia}\n")
+        print(f"Signal2thrust weights: {self.model.tnn_sig2thr_fcts[0].weight}, init. {self.model.init_signal2thrust[0]}\n")
 
     def lossFunction(self, dX_X, dX_real):
         """
@@ -103,21 +112,23 @@ class Learn():
         In dX_real: real system dynamics (b x n)
         Out L: average loss of batch X (scalar)
         """
-        return (1/dX_X.shape[0]) * torch.sum(torch.square(dX_X-dX_real))
+        mse = (1/dX_X.shape[0]) * torch.sum(torch.square(dX_X-dX_real))
 
-    def lossFunction2(self, dX_X, dX_real):
-        """
-        Description: calc. average loss of batch X
-        In dX_X: approx. of system dynamics (b x n)
-        In dX_real: real system dynamics (b x n)
-        Out L: average loss of batch X (scalar)
-        """
-        reg = torch.linalg.norm(self.model.center_of_mass-self.model.init_center_of_mass) + (self.model.inertia-self.model.init_inertia)**2
-        return (1/dX_X.shape[0]) * torch.sum(torch.square(dX_X-dX_real)) + reg
+        if self.args.regularize_center_of_mass:
+            mse += torch.linalg.norm(self.model.center_of_mass-self.model.init_center_of_mass)**2
 
-    def splitData(self):
+        if self.args.regularize_inertia:
+            mse += (self.model.inertia-self.model.init_inertia)**2
+
+        return mse
+
+    def splitData(self, X, U, dX):
         """
         Get data from system class and split into training and testing sets
+        Args:
+            X: state, tensor (N,D)
+            U: control input, tensor (N,M)
+            dX: dynmaics, tensor (N,D)
         Returns:
             X_tr: state training set, tensor (N*(1-testing_share),D)
             X_te: state testing set, tensor (N*testing_share,D)
@@ -126,7 +137,9 @@ class Learn():
             dX_tr: dynmaics training set, tensor (N*(1-testing_share),D)
             dX_te: dynmaics testing set, tensor (N*testing_share,D)
         """
-        X, U, dX = self.sys.getData(u_map=True)
+        X = X.clone().detach()
+        U = U.clone().detach()
+        dX = dX.clone().detach()
 
         # randomize order
         rand_order = torch.randperm(X.shape[0])
@@ -156,7 +169,10 @@ class Learn():
             X: state, tensor (batch_size,D)
             U: control input, tensor (batch_size,M)
             dX: dynamics, tensor (batch_size,D)
-            """
+        """
+        X = X.clone().detach()
+        U = U.clone().detach()
+        dX = dX.clone().detach()
 
         # calc. number of batches of given data set and given batch size
         nb_batches = int(np.ceil(X.shape[0]/self.batch_size))

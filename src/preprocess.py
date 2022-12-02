@@ -2,7 +2,9 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 from pysindy.differentiation import SINDyDerivative
-from scipy import interpolate, stats
+from scipy import interpolate, signal
+
+
 
 class Preprocess():
     def __init__(self, series) -> None:
@@ -21,6 +23,8 @@ class Preprocess():
         self.tx = {}
         self.u = {}
         self.tu = {}
+        self.imu = {}
+        self.timu = {}
         self.force = {}
         self.tforce = {}
         # self.torque = {}
@@ -30,6 +34,7 @@ class Preprocess():
         """
         Loop through all experiments of one series and load data:
         x: [x, y, theta], tx: time stamp of x, u: [u1, ..., u6], tu: time stamp of u
+        imu: [ddx, ddy, dtheta], timu: time stamp of imu, force: [thrustx, thrusty, thrustz]
         """
         # loop through all subfolders of the defined experiment serie
         for root, dirs, files in os.walk(os.path.join("experiment", self.series)):
@@ -61,6 +66,12 @@ class Preprocess():
                                                     usecols=[1], dtype=float, skip_footer=skip_footer)
                     self.u[root] = np.genfromtxt(   os.path.join(root, f), delimiter=",", skip_header=1, 
                                                     usecols=[2,3,4,5,6,7], dtype=float, skip_footer=skip_footer)
+                elif f.find("imu") != -1:
+                    #self.datas[f[:-4]] = pd.read_csv(os.path.join(root, f)).to_numpy()
+                    self.timu[root] = np.genfromtxt(  os.path.join(root, f), delimiter=",", skip_header=1, 
+                                                    usecols=[1], dtype=float, skip_footer=skip_footer)
+                    self.imu[root] = np.genfromtxt(   os.path.join(root, f), delimiter=",", skip_header=1, 
+                                                    usecols=[2,3,4], dtype=float, skip_footer=skip_footer)
                 elif f.find("thrust") != -1:
                     #self.datas[f[:-4]] = pd.read_csv(os.path.join(root, f)).to_numpy()
                     self.tforce[root] = np.genfromtxt(  os.path.join(root, f), delimiter=",", skip_header=1, 
@@ -99,14 +110,19 @@ class Preprocess():
             except: tx_min = np.Inf
             try: tu_min = self.tu[exp][0]
             except: tu_min = np.Inf
+            try: timu_min = self.timu[exp][0]
+            except: timu_min = np.Inf
             try: tf_min = self.tforce[exp][0]
             except: tf_min = np.Inf
-            start_stamp = np.min(np.array([tx_min, tu_min, tf_min]))
+            
+            start_stamp = np.min(np.array([tx_min, tu_min, timu_min, tf_min]))
 
             # convert tx, tu and tforce from stamp to seconds
             try: self.tx[exp] = (self.tx[exp]-start_stamp) / 1000000000
             except: pass
             try: self.tu[exp] = (self.tu[exp]-start_stamp) / 1000000000
+            except: pass
+            try: self.timu[exp] = (self.timu[exp]-start_stamp) / 1000000000
             except: pass
             try: self.tforce[exp] = (self.tforce[exp]-start_stamp) / 1000000000
             except: pass
@@ -127,7 +143,7 @@ class Preprocess():
             
             upper_time = np.maximum(self.tx[exp][-1], self.tu[exp][-1])
             for i, theta_max in enumerate(np.abs(self.x[exp][:,2])):
-                if theta_max > 3.1:
+                if theta_max > 3.0:
                     upper_time = self.tx[exp][i]
                     break
 
@@ -138,7 +154,7 @@ class Preprocess():
                 if tx>lower_time and lower_x_idx==0:
                     lower_x_idx = i
                 if tx > upper_time:
-                    upper_x_idx = i
+                    upper_x_idx = i - 1
                     break
             
             lower_u_idx = 0
@@ -147,7 +163,16 @@ class Preprocess():
                 if tu>lower_time and lower_u_idx==0:
                     lower_u_idx = i
                 if tu > upper_time:
-                    upper_u_idx = i
+                    upper_u_idx = i - 1
+                    break
+
+            lower_imu_idx = 0
+            upper_imu_idx = self.imu[exp].shape[0] - 1
+            for i, timu in enumerate(self.timu[exp]):
+                if timu>lower_time and lower_imu_idx==0:
+                    lower_imu_idx = i
+                if timu > upper_time:
+                    upper_imu_idx = i - 1
                     break
 
             # ensure that min(tu)<min(tx) and max(tx)<max(tu) s.t. range(tu) is larger than range(tx)
@@ -157,16 +182,26 @@ class Preprocess():
             while self.tu[exp][upper_u_idx] < self.tx[exp][upper_x_idx]:
                 upper_x_idx -= 1
 
+            # ensure that min(timu)<min(tx) and max(tx)<max(timu) s.t. range(timu) is larger than range(tx)
+            # this is necessary because u is intermolated to match x
+            while self.timu[exp][lower_imu_idx] > self.tx[exp][lower_x_idx]:
+                lower_x_idx += 1
+            while self.timu[exp][upper_imu_idx] < self.tx[exp][upper_x_idx]:
+                upper_x_idx -= 1
+
             if plot:
                 plt.plot(self.tx[exp], self.x[exp][:,2], )
                 plt.vlines(self.tx[exp][lower_x_idx], ymin=-3.3, ymax=3.3, colors="r")
                 plt.vlines(self.tx[exp][upper_x_idx], ymin=-3.3, ymax=3.3, colors="r")
+                plt.title(f"Theta of exp. {exp}")
                 plt.show()
 
             self.x[exp] = self.x[exp][lower_x_idx:upper_x_idx+1,:]
             self.tx[exp] = self.tx[exp][lower_x_idx:upper_x_idx+1]
             self.u[exp] = self.u[exp][lower_u_idx:upper_u_idx+1,:]
             self.tu[exp] = self.tu[exp][lower_u_idx:upper_u_idx+1]
+            self.imu[exp] = self.imu[exp][lower_imu_idx:upper_imu_idx+1,:]
+            self.timu[exp] = self.timu[exp][lower_imu_idx:upper_imu_idx+1]
 
     def intermolateU(self, plot=False):
         """
@@ -191,6 +226,48 @@ class Preprocess():
             self.u[exp] = u_inter
             self.tu[exp] = [] # not used anymore
 
+    def intermolateIMU(self, plot=False):
+        """
+        Polynomial interpolation of imu data to match with x
+        """
+        for exp in self.u:
+            print(f"timu min: {self.timu[exp][0]}, tx min: {self.tx[exp][0]}")
+            print(f"timu max: {self.timu[exp][-1]}, tx max: {self.tx[exp][-1]}")
+
+            inter_fct = interpolate.interp1d(self.timu[exp], self.imu[exp], axis=0)
+            imu_inter = inter_fct(self.tx[exp])
+
+            if plot:
+                fig, axs = plt.subplots(nrows=self.imu[exp].shape[1], figsize =(8, 8))             
+                for i, ax in enumerate(axs):
+                    ax.plot(self.timu[exp], self.imu[exp][:,i], color="b", label="u")
+                    ax.plot(self.tx[exp], imu_inter[:,i], '--', color="r", label="u inter.")
+                    ax.legend()
+                    ax.set_title(f"IMU {i}")
+                plt.show()
+
+            self.imu[exp] = imu_inter
+            self.timu[exp] = [] # not used anymore
+
+    def smoothIMU(self, plot=False):
+        """
+        Calc. smooth approx. of IMU data
+        """
+        for exp in self.x:
+            IMU_smooth = signal.savgol_filter(self.imu[exp], window_length=111, polyorder=3, axis=0)
+
+            if plot:
+                fig, axs = plt.subplots(nrows=self.imu[exp].shape[1], ncols=1, figsize =(8, 8))             
+                for i, ax in enumerate(axs):
+                    ax.plot(self.tx[exp], self.imu[exp][:,i], color="b", label="imu")
+                    ax.plot(self.tx[exp], IMU_smooth[:,i], '--', color="g", label="smooth imu")
+                    ax.legend()
+                    ax.set_title(f"Dimension {i}")
+                plt.show()
+
+            self.imu[exp] = IMU_smooth
+
+
     def diffPosition(self, plot=False):
         """
         Calc. smooth derivatives from x to get dx and ddx
@@ -207,7 +284,8 @@ class Preprocess():
                     ax.plot(self.tx[exp], self.x[exp][:,i], color="b", label="pos")
                     ax.plot(self.tx[exp], self.dx[exp][:,i], color="g", label="vel")
                     ax.plot(self.tx[exp], self.ddx[exp][:,i], color="r", label="acc")
-                    ax.set_ylim([np.min(self.ddx[exp][:,i]), np.max(self.ddx[exp][:,i])])
+                    ax.plot(self.tx[exp], self.imu[exp][:,i], color="b", label="imu")
+                    # ax.set_ylim([np.min(self.ddx[exp][:,i]), np.max(self.ddx[exp][:,i])])
                     ax.legend()
                     ax.set_title(f"Dimension {i}")
 
@@ -215,14 +293,20 @@ class Preprocess():
                 d_error = self.integrate(self.dx[exp], self.tx[exp], self.x[exp][0,:])
                 d_error = d_error - self.x[exp]
 
-                # double integrate ddx and calc. error
+                # double integrate imu and calc. error
                 dd_error = self.integrate(self.ddx[exp], self.tx[exp], self.dx[exp][0,:])
                 dd_error = self.integrate(dd_error, self.tx[exp], self.x[exp][0,:])
                 dd_error = dd_error - self.x[exp]
 
+                # double integrate ddx and calc. error
+                imu_error = self.integrate(self.imu[exp], self.tx[exp], self.dx[exp][0,:])
+                imu_error = self.integrate(imu_error, self.tx[exp], self.x[exp][0,:])
+                imu_error = imu_error - self.x[exp]
+
                 for i, ax in enumerate(axs[:,1]):
                     ax.plot(self.tx[exp], d_error[:,i], color="g", label="dx error")
                     ax.plot(self.tx[exp], dd_error[:,i], color="r", label="ddx error")
+                    ax.plot(self.tx[exp], imu_error[:,i], color="b", label="imu error")
                     ax.legend()
                     ax.set_title(f"Dimension {i}")                    
 
@@ -246,232 +330,19 @@ class Preprocess():
         
         return X
 
-    def getThrust(self, plot=False):
-        # dict for signals and motors
-        thrusts = {}
-        for i in range(6):
-            thrusts[i] = {}
-
-
-        # loop through all experiments        
-        for exp in self.force:
-
-            signal_state_prev = True
-            signal_time_start = 0 
-            mot = 0
-            sig = 0
-            for i, (tu, u) in enumerate(zip(self.tu[exp], self.u[exp])):
-                
-                # check if currently a signal is send
-                if np.sum(u) > 0:
-                    signal_state = True
-                else: 
-                    signal_state = False
-
-                # check if signal state toggled
-                if signal_state is not signal_state_prev or i==len(self.tu[exp])-1:
-                    # evaluate start and stop indices of signal
-                    assert signal_time_start < tu
-                    idx_start =  np.argmax(self.tforce[exp]>signal_time_start)
-                    idx_stop = np.argmax(self.tforce[exp]>=tu)
-
-                    # calc. signal mean and standard deviation
-                    if signal_state_prev:
-                        force = self.force[exp][idx_start:idx_stop,:]
-                        time = self.tforce[exp][idx_start:idx_stop]
-                        mot = np.argmax(self.u[exp][i-1])
-                        sig = np.max(self.u[exp][i-1])
-                        thrusts[mot][sig] = {   "idx_start":idx_start, "idx_stop":idx_stop, "time":time, "force":force, 
-                                                "bg":None, "norm":None, "mean":None, "std":None }
-                    else: 
-                        thrusts[mot][sig]["bg"] = self.force[exp][idx_start:idx_stop,:]
-                    
-                    # set starting time of signal while removing 0.5s
-                    signal_time_start = tu + 0.5
-                
-                    # update previous state
-                    signal_state_prev = signal_state
-
-        for exp in self.force:
-            if plot:
-                fig, axs = plt.subplots(nrows=2, ncols=3, figsize =(16, 8)) 
-                axs[0,0].plot(self.tforce[exp], self.force[exp][:,0], color="b", label="Thrust x")
-                axs[0,1].plot(self.tforce[exp], self.force[exp][:,1], color="g", label="Thrust y")
-                axs[0,0].set_title(f"Thrust x")
-                axs[0,1].set_title(f"Thrust y")
-                axs[1,0].set_title(f"Thrust x (offset removed)")   
-                axs[1,1].set_title(f"Thrust y (offset removed)")
-                axs[1,2].set_title(f"Thrust norm (offset removed)")
-
-                offset_plot_x = []
-                offset_plot_y = []
-                offset_plot_t = []
-
-
-            for mot in thrusts:
-                for sig in thrusts[mot]:
-                    bg_x = np.mean(thrusts[mot][sig]["bg"][:,0])
-                    bg_y = np.mean(thrusts[mot][sig]["bg"][:,1])
-                    bg_idx = thrusts[mot][sig]["idx_stop"]
-                    
-
-                    thrusts[mot][sig]["force"][:,0] = thrusts[mot][sig]["force"][:,0] - bg_x
-                    thrusts[mot][sig]["force"][:,1] = thrusts[mot][sig]["force"][:,1] - bg_y
-                    thrusts[mot][sig]["norm"] = np.sqrt(np.power(thrusts[mot][sig]["force"][:,0], 2) + np.power(thrusts[mot][sig]["force"][:,1], 2))
-                    thrusts[mot][sig]["mean"] = np.mean(thrusts[mot][sig]["norm"])
-                    thrusts[mot][sig]["std"] = np.std(thrusts[mot][sig]["norm"])
-            
-                    if plot:
-                        offset_plot_x.append(bg_x)
-                        offset_plot_y.append(bg_y)
-                        offset_plot_t.append(self.tforce[exp][bg_idx])
-                        axs[1,0].plot(thrusts[mot][sig]["time"], thrusts[mot][sig]["force"][:,0], color="b")                    
-                        axs[1,1].plot(thrusts[mot][sig]["time"], thrusts[mot][sig]["force"][:,1], color="g")
-                        axs[1,2].plot(thrusts[mot][sig]["time"], thrusts[mot][sig]["norm"], color="m")
-            if plot:
-                axs[0,0].plot(offset_plot_t, offset_plot_x, color="r", label="Offset")
-                axs[0,1].plot(offset_plot_t, offset_plot_y, color="r", label="Offset")
-                axs[1,0].hlines(0, offset_plot_t[0], offset_plot_t[-1], color="r", label="Thrust x")
-                axs[1,1].hlines(0, offset_plot_t[0], offset_plot_t[-1], color="r", label="Thrust y")
-                axs[1,0].plot([], [], color="b", label="Thrust x")
-                axs[1,1].plot([], [], color="g", label="Thrust y")
-                axs[1,2].plot([], [], color="m", label="Thrust norm")
-                axs[0,0].set_xlabel("time [s]")
-                axs[0,0].set_ylabel("force [N]")
-                axs[0,1].set_xlabel("time [s]")
-                axs[0,1].set_ylabel("force [N]")
-                axs[1,0].set_xlabel("time [s]")
-                axs[1,0].set_ylabel("force [N]")
-                axs[1,1].set_xlabel("time [s]")
-                axs[1,1].set_ylabel("force [N]")
-                axs[1,2].set_xlabel("time [s]")
-                axs[1,2].set_ylabel("force [N]")
-
-                axs[0,0].legend()
-                axs[0,1].legend()
-                axs[1,0].legend()
-                axs[1,1].legend()
-                axs[1,2].legend()
-                fig.delaxes(axs[0,2])
-                plt.show()
-    
-        if plot:
-            for exp in self.force:
-                fig, axs = plt.subplots(nrows=2, ncols=3, figsize =(12, 8))             
-                for i, mot in enumerate(thrusts):
-                    k = int(i/len(axs[0]))
-                    l = i % len(axs[0])
-
-                    for sig in thrusts[mot]:
-                        axs[k,l].set_title(f"Motor {mot+1}")
-                        axs[k,l].scatter(sig, thrusts[mot][sig]["mean"], color="b")
-                        axs[k,l].errorbar(sig, thrusts[mot][sig]["mean"], thrusts[mot][sig]["std"], color="r", fmt='.k')
-                    axs[k,l].scatter([], [], color="b", label="Mean")
-                    axs[k,l].errorbar([], [], [], color="r", fmt='.k', label="Std.")
-                    axs[k,l].set_xlabel("signal")
-                    axs[k,l].set_ylabel("thrust [N]")
-                    axs[k,l].legend()
-                plt.show()
-
-        return thrusts
-
-    def approxThrust(self, thrusts, plot=False):
-        
-        for mot in thrusts:
-            signal = []
-            thrust_mean = []
-            thrust_std = []
-            for sig in thrusts[mot]:
-                signal.append(sig)
-                thrust_mean.append(thrusts[mot][sig]["mean"])
-                thrust_std.append(thrusts[mot][sig]["std"])
-
-            if plot:
-                fig, axs = plt.subplots(nrows=2, ncols=3, figsize =(12, 8))
-                fig.suptitle(f"Motor {mot+1}")
-
-            for j, deg in enumerate(range(1,7)):
-                k = int(j/len(axs[0]))
-                l = j % len(axs[0])
-
-                coeff = np.polyfit(signal, thrust_mean, deg=deg)
-
-                lin_x = np.linspace(0, 1, 100)
-                lin_X = np.zeros((100,deg+1))
-                for i in range(lin_X.shape[1]):
-                    lin_X[:,i] = np.power(lin_x, i)
-                thrust_approx = lin_X @ np.flip(coeff)
-
-                stat_x = np.array(signal, dtype=float)
-                stat_X = np.zeros((len(signal),deg+1))
-                for i in range(stat_X.shape[1]):
-                    stat_X[:,i] = np.power(stat_x, i)
-                stat_approx = stat_X @ np.flip(coeff)
-                _, _, rvalue, _, _ = stats.linregress(stat_approx, np.array(thrust_mean, dtype=float))
-
-                if plot:
-                    axs[k,l].scatter(signal, thrust_mean, color="b", label="Meas.")
-                    axs[k,l].errorbar(signal, thrust_mean, thrust_std, color="r", fmt='.k', label="Std.")
-                    axs[k,l].plot(lin_x, thrust_approx, color="g", label="Approx.")
-                    axs[k,l].set_title(f"Deg={deg} (R^2={np.round(rvalue**2, 4)})")
-                    axs[k,l].set_xlabel("Signal")
-                    axs[k,l].set_ylabel("Thrust")
-                    axs[k,l].legend()
-
-            if plot:
-                plt.show()
-    
-        if plot:
-            fig, axs = plt.subplots(nrows=1, ncols=1, figsize =(8, 8))
-
-            for mot in thrusts:
-                signal = []
-                thrust_mean = []
-                thrust_std = []
-                for sig in thrusts[mot]:
-                    signal.append(sig)
-                    thrust_mean.append(thrusts[mot][sig]["mean"])
-                    thrust_std.append(thrusts[mot][sig]["std"])
-
-                coeff = np.polyfit(signal, thrust_mean, deg=3)
-
-                lin_x = np.linspace(0, 1, 100)
-                lin_X = np.zeros((100,4))
-                for i in range(lin_X.shape[1]):
-                    lin_X[:,i] = np.power(lin_x, i)
-                thrust_approx = lin_X @ np.flip(coeff)
-
-                axs.plot(lin_x, thrust_approx, label=f"Motor {mot}")
-                axs.set_title(f"Thrust approx. (poly. degree 3)")
-                axs.set_xlabel("Signal")
-                axs.set_ylabel("Thrust")
-                axs.legend()
-            plt.show()
-
             
 
-
-
-
-
-            
-
-def main_experiment():
-    pp = Preprocess(series="holohover_20221025")
+def main():
+    pp = Preprocess(series="holohover_20221130")
     pp.loadData()
     pp.stamp2seconds()
-    pp.cropData(plot=True)
-    pp.intermolateU(plot=True)
-    pp.diffPosition(plot=True)
+    pp.cropData(plot=False)
+    pp.intermolateU(plot=False)
+    pp.intermolateIMU(plot=False)
+    pp.smoothIMU(plot=False)
+    pp.diffPosition(plot=False)
     pp.saveData()
 
-def main_signal2thrust():
-    pp = Preprocess(series="signal_20221121")
-    pp.loadData()
-    pp.stamp2seconds() 
-    thrusts = pp.getThrust(plot=True)
-    pp.approxThrust(thrusts, plot=True)
 
 if __name__ == "__main__":
-    #main_experiment()
-    main_signal2thrust()
+    main()

@@ -9,6 +9,8 @@ class System:
         self.args = args
         self.device = dev
 
+        self.poly_expand_U = args.poly_expand_U
+
         # data
         self.X = None
         self.U = None
@@ -40,8 +42,11 @@ class System:
         U = self.U.detach().clone()
         if u_map:
             U = self.uMap(U)
+
+        if self.poly_expand_U:
+            U = self.polyExpandU(U)
         
-        return self.X.detach().clone(), U, self.dX.detach().clone()
+        return self.X.detach().clone(), U.detach().clone(), self.dX.detach().clone()
 
     def loadData(self):
         """
@@ -98,6 +103,25 @@ class System:
         Uhat = Uhat.detach().clone()
         U = (Uhat+1)/2 * (self.u_max-self.u_min) + self.u_min
         return U
+
+    def polyExpandU(self, U):
+        """
+        Make polynomial expansion of control input
+        Args:
+            U: control input, tensor (N,M)                        
+        Returns:
+            Upoly: polynomial expansion of U, if poly_expand_U=2 and U=[u1,u2,u3] 
+                    then Upoly=[u1*u1, u2*u2, u3*u3], tensor (N,poly_expand_U*M)
+        """
+        U = U.detach().clone()
+        U = U.reshape(U.shape[0], U.shape[1], 1)
+
+        Upoly = U.detach().clone()
+        for deg in range(2,self.poly_expand_U+1):
+            Upoly = torch.concat((Upoly, torch.pow(U, deg)), axis=2)
+
+        return Upoly.flatten(start_dim=1, end_dim=2)
+
 
     def equPoint(self, U, U_hat=False):
         """
@@ -387,6 +411,16 @@ def test_oscillator():
     closest_equ_point = sys.equPoint(U=torch.tensor([14.19]))
     print(f"Closest equ. point: {closest_equ_point}")
 
+def testPolyExpandU():
+    U = torch.tensor(  [[1,2],
+                        [2,3]])
+    poly_expand_U = 0
+
+    sys = System(args=None, dev=None)
+    U = sys.polyExpandU(U, poly_expand_U)
+    print(U)
+
 
 if __name__ == "__main__":
-    test_oscillator()
+    # test_oscillator()
+    testPolyExpandU()

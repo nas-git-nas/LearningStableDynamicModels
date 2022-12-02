@@ -17,21 +17,26 @@ class Args():
             self.black_model = True
             self.controlled_system = args["black_model"]["controlled_system"]
             self.lyapunov_correction = args["black_model"]["lyapunov_correction"]
+            self.poly_expand_U = False
         else:
             self.black_model = False
 
-        if model_type == "HolohoverGrey":
+        if model_type == "HolohoverGrey" or model_type == "Signal2Thrust":
             self.grey_model = True
             self.learn_center_of_mass = args["grey_model"]["learn_center_of_mass"]
             self.learn_inertia = args["grey_model"]["learn_inertia"]
+            self.learn_signal2thrust = args["grey_model"]["learn_signal2thrust"]
+            self.poly_expand_U = args["grey_model"]["poly_expand_U"]
         else:
             self.grey_model = False       
   
         self.load_model = args["learn"]["load_model"]
         self.model_path = args["learn"]["model_path"]
-        self.learning_rate = args["learn"]["self.learning_rate"]
-        self.nb_epochs = args["learn"]["self.nb_epochs"]
-        self.nb_batches = args["learn"]["self.nb_batches"]
-        self.batch_size = args["learn"]["self.batch_size"]
-        self.testing_share = args["learn"]["self.testing_share"]
+        self.learning_rate = args["learn"]["learning_rate"]
+        self.nb_epochs = args["learn"]["nb_epochs"]
+        self.nb_batches = args["learn"]["nb_batches"]
+        self.batch_size = args["learn"]["batch_size"]
+        self.testing_share = args["learn"]["testing_share"]
+        self.regularize_center_of_mass = args["learn"]["regularize_center_of_mass"]
+        self.regularize_inertia = args["learn"]["regularize_inertia"]
 
