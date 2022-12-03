@@ -38,9 +38,9 @@ class System:
     def hessian(self, x, u):
         pass
 
-    def getData(self, u_map=False):
+    def getData(self):
         U = self.U.detach().clone()
-        if u_map:
+        if self.args.u_map:
             U = self.uMap(U)
 
         if self.poly_expand_U:

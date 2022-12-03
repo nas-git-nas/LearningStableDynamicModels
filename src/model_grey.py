@@ -3,7 +3,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from args import Args
+from src.args import Args
 
 class ModelGrey(nn.Module):
     def __init__(self, dev):
@@ -125,6 +125,8 @@ class HolohoverModelGrey(ModelGrey):
         thrust = self.signal2thrust(U) # (N, M)
         acc = self.thrust2acc(thrust, X) # (N, S)
 
+
+
         return acc
 
     def signal2thrust(self, U):
@@ -167,7 +169,7 @@ class HolohoverModelGrey(ModelGrey):
 
         # calc. acceleration, Fw_sum[0,:] = [Fx, Fy, Fz] and Mb[0,:] = [Mx, My, Mz]
         # holohover moves in a plane -> Fz = Mx = My = 0, also Mz_body = Mz_world
-        acc = Fw_sum/self.mass + Mb_sum/self.inertia
+        acc = Fw_sum/self.mass #+ Mb_sum/self.inertia
 
         return acc
 
@@ -175,7 +177,7 @@ class HolohoverModelGrey(ModelGrey):
         """
         Calc. 3D rotational matrix for batch
         Args:
-            theta: rotation aroung z-axis, tensor (N)
+            theta: rotation aroung z-axis in world frame, tensor (N)
         Returns:
             rot_mat: rotational matrix, tensor (N,S,S)
         """
@@ -202,19 +204,24 @@ def main():
     args = Args(model_type="HolohoverGrey")
     model = HolohoverModelGrey(args=args, dev=device)
 
-    U = torch.tensor(  [[1.0, 1.0, 1.0, 0.0 ,0.0 ,0.0, 1.0, 1.0, 1.0, 0.0 ,0.0 ,0.0, 0.0, 0.0, 0.0, 0.0 ,0.0 ,0.0],
-                        [1.0, 1.0, 1.0, 0.0 ,0.0 ,0.0, 1.0, 1.0, 1.0, 0.0 ,0.0 ,0.0, 0.0, 0.0, 0.0, 0.0 ,0.0 ,0.0]])
+    # U = torch.tensor(  [[1.0, 1.0, 1.0, 0.0 ,0.0 ,0.0, 1.0, 1.0, 1.0, 0.0 ,0.0 ,0.0, 0.0, 0.0, 0.0, 0.0 ,0.0 ,0.0],
+    #                     [1.0, 1.0, 1.0, 0.0 ,0.0 ,0.0, 1.0, 1.0, 1.0, 0.0 ,0.0 ,0.0, 0.0, 0.0, 0.0, 0.0 ,0.0 ,0.0]])
 
-    # U = torch.tensor(  [[1.0, 1.0, 1.0, 0.0 ,0.0 ,0.0],
-    #                     [1.0, 1.0, 1.0, 0.0 ,0.0 ,0.0]])
+    # # U = torch.tensor(  [[1.0, 1.0, 1.0, 0.0 ,0.0 ,0.0],
+    # #                     [1.0, 1.0, 1.0, 0.0 ,0.0 ,0.0]])
 
-    thrust = model.signal2thrust(U)
+    # thrust = model.signal2thrust(U)
+
+    
+
+    X = torch.tensor(  [[0,0,0,0,0,0],
+                        [0,0,1.0472,0,0,0]])
+    thrust = torch.tensor( [[0.0, 0, 1, 0, 1, 0],
+                            [1.0, 0, 0, 0, 0, 1]])
+    
+    acc = model.thrust2acc(thrust, X)
     print(thrust)
-
-    # X = torch.tensor(  [[0,0,0.7854,0,0,0],
-    #                     [0,0,3.142,0,0,0]])
-
-    # acc = model.thrust2acc(thrust, X)
+    print(acc)
 
 
 if __name__ == "__main__":

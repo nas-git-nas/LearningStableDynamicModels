@@ -4,6 +4,7 @@ from datetime import datetime
 import os
 import shutil
 import torch
+import matplotlib.pyplot as plt
 
 
 # torch.autograd.set_detect_anomaly(True)
@@ -56,8 +57,8 @@ class Learn():
 
 
         # get data and split it into training and testing sets
-        X_data, U_data, dX_data = self.sys.getData(u_map=True)
-        print(f"shape X_data: {X_data.shape}, U_data: {U_data.shape}, dX_data: {dX_data.shape}")
+        X_data, U_data, dX_data = self.sys.getData()
+        # print(f"shape X_data: {X_data.shape}, U_data: {U_data.shape}, dX_data: {dX_data.shape}")
         X_tr, X_te, U_tr, U_te, dX_tr, dX_te = self.splitData(X_data, U_data, dX_data)
         
         for j in range(self.nb_epochs):
@@ -65,15 +66,12 @@ class Learn():
 
             loss_tr = []
             for X, U, dX_real in self.iterData(X_tr, U_tr, dX_tr):
-
-                print(f"shape X: {X.shape}, U: {U.shape}, dX_real: {dX_real.shape}")
               
                 # forward pass through models
                 dX_X = self.model.forward(X, U) # (N,D)
-                # print(f"acc real: {torch.mean(dX_real[:,3:6], axis=0)}, acc train: {torch.mean(dX_X[:,3:6], axis=0)}")    
-                # 
-
-                print(f"shape X: {X.shape}, U: {U.shape}, dX: {dX_X.shape}")          
+                
+                print(f"U min: {torch.min(U)}, U max: {torch.max(U)}")
+                # print(f"shape X: {X.shape}, U: {U.shape}, dX: {dX_X.shape}, dX_real: {dX_real.shape}")          
 
                 # calc. loss
                 loss = self.lossFunction(dX_X, dX_real)
@@ -81,6 +79,11 @@ class Learn():
 
                 print(f"batch loss: {loss.detach().clone().float()}") 
                 print(f"mean error: {np.mean(np.power((dX_X-dX_real).detach().numpy(), 2), axis=0)}")
+
+                plt.plot(dX_X[:,4].detach().numpy(), label="ddx")
+                plt.plot(dX_real[:,4].detach().numpy(), label="ddx real")
+                plt.legend()
+                plt.show()
 
                 # backwards pass through models
                 self.optimizer.zero_grad()
@@ -142,10 +145,10 @@ class Learn():
         dX = dX.clone().detach()
 
         # randomize order
-        rand_order = torch.randperm(X.shape[0])
-        X = X[rand_order,:]
-        U = U[rand_order,:]
-        dX = dX[rand_order,:]
+        # rand_order = torch.randperm(X.shape[0])
+        # X = X[rand_order,:]
+        # U = U[rand_order,:]
+        # dX = dX[rand_order,:]
 
         # split into training and testing sets
         split_idx = int((1-self.testing_share)*X.shape[0])

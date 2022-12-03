@@ -1,7 +1,7 @@
 import os
 import matplotlib.pyplot as plt
 import numpy as np
-from pysindy.differentiation import SINDyDerivative
+from pysindy.differentiation import SINDyDerivative, SmoothedFiniteDifference
 from scipy import interpolate, signal
 
 
@@ -24,6 +24,7 @@ class Preprocess():
         self.u = {}
         self.tu = {}
         self.imu = {}
+        self.imu_world = {}
         self.timu = {}
         self.force = {}
         self.tforce = {}
@@ -90,7 +91,7 @@ class Preprocess():
         U = np.empty((0,self.M))
         for exp in self.tx:
             Xnew = np.concatenate((self.x[exp], self.dx[exp]), axis=1)
-            dXnew = np.concatenate((self.dx[exp], self.ddx[exp]), axis=1)
+            dXnew = np.concatenate((self.dx[exp], self.imu[exp][:,0:2], self.ddx[exp][:,2:3]), axis=1)
 
             X = np.concatenate((X, Xnew), axis=0)
             dX = np.concatenate((dX, dXnew), axis=0)
@@ -254,49 +255,64 @@ class Preprocess():
         Calc. smooth approx. of IMU data
         """
         for exp in self.x:
-            IMU_smooth = signal.savgol_filter(self.imu[exp], window_length=111, polyorder=3, axis=0)
+
+            # remove offset
+            offset = np.mean(self.imu[exp], axis=0)           
+            IMU_offset = self.imu[exp] #self.imu[exp] - offset
+            # print(f"offset: {offset}")
+
+            # convert body to world frame
+            rotation_b2w = self.rotMatrix(self.x[exp][:,2]) # (N,S,S)
+            IMU_world = np.einsum('ns,nps->np', IMU_offset, rotation_b2w) # (N, S)
+
+            # smooth data
+            IMU_smooth = IMU_world #signal.savgol_filter(IMU_world, window_length=11, polyorder=3, axis=0)
 
             if plot:
                 fig, axs = plt.subplots(nrows=self.imu[exp].shape[1], ncols=1, figsize =(8, 8))             
                 for i, ax in enumerate(axs):
                     ax.plot(self.tx[exp], self.imu[exp][:,i], color="b", label="imu")
                     ax.plot(self.tx[exp], IMU_smooth[:,i], '--', color="g", label="smooth imu")
+                    ax.hlines(offset[i], xmin=self.tx[exp][0], xmax=self.tx[exp][-1], color="r", 
+                                    label=f"offset: {np.round(offset[i],2)} (body frame)")
                     ax.legend()
                     ax.set_title(f"Dimension {i}")
                 plt.show()
 
-            self.imu[exp] = IMU_smooth
+            self.imu_world[exp] = IMU_smooth
+
 
 
     def diffPosition(self, plot=False):
         """
         Calc. smooth derivatives from x to get dx and ddx
         """
-        # fd = SmoothedFiniteDifference(d=1, axis=0, smoother_kws={'window_length': 1000})
-        fd = SINDyDerivative(d=1, kind="savitzky_golay", left=0.5, right=0.5, order=3)
+        # fd = SmoothedFiniteDifference(d=1, axis=0, smoother_kws={'window_length': 101})
+        fd = SINDyDerivative(d=1, kind="savitzky_golay", left=0.05, right=0.05, order=3) # specify widnow size
         for exp in self.x:
-            self.dx[exp] = fd._differentiate(self.x[exp], self.tx[exp])
-            self.ddx[exp] = fd._differentiate(self.dx[exp], self.tx[exp])
+            plot_range = 1000 #self.tx[exp].shape[0]
+            self.dx[exp] = fd._differentiate(self.x[exp][:plot_range,:], self.tx[exp][:plot_range])
+            self.ddx[exp] = fd._differentiate(self.dx[exp][:plot_range,:], self.tx[exp][:plot_range])
 
-            if plot:
+            if plot: 
                 fig, axs = plt.subplots(nrows=self.x[exp].shape[1], ncols=2, figsize =(8, 8))             
                 for i, ax in enumerate(axs[:,0]):
-                    ax.plot(self.tx[exp], self.x[exp][:,i], color="b", label="pos")
-                    ax.plot(self.tx[exp], self.dx[exp][:,i], color="g", label="vel")
-                    ax.plot(self.tx[exp], self.ddx[exp][:,i], color="r", label="acc")
-                    ax.plot(self.tx[exp], self.imu[exp][:,i], color="b", label="imu")
+                    ax.plot(self.tx[exp][:plot_range], self.x[exp][:plot_range,i], color="b", label="pos")
+                    ax.plot(self.tx[exp][:plot_range], self.dx[exp][:plot_range,i], color="g", label="vel")
+                    ax.plot(self.tx[exp][:plot_range], self.ddx[exp][:plot_range,i], color="r", label="acc")
+                    ax.plot(self.tx[exp][:plot_range], self.imu[exp][:plot_range,i], color="c", label="imu")
                     # ax.set_ylim([np.min(self.ddx[exp][:,i]), np.max(self.ddx[exp][:,i])])
                     ax.legend()
                     ax.set_title(f"Dimension {i}")
 
                 # integrate dx and calc. error
-                d_error = self.integrate(self.dx[exp], self.tx[exp], self.x[exp][0,:])
-                d_error = d_error - self.x[exp]
+                d_error = self.integrate(self.dx[exp][:plot_range], self.tx[exp][:plot_range], self.x[exp][0,:])
+                d_error = d_error - self.x[exp][:plot_range]
 
                 # double integrate imu and calc. error
-                dd_error = self.integrate(self.ddx[exp], self.tx[exp], self.dx[exp][0,:])
-                dd_error = self.integrate(dd_error, self.tx[exp], self.x[exp][0,:])
-                dd_error = dd_error - self.x[exp]
+                dd_error = self.integrate(self.ddx[exp][:plot_range], self.tx[exp][:plot_range], self.dx[exp][0,:])
+                dd_error = self.integrate(dd_error, self.tx[exp][:plot_range], self.x[exp][0,:])
+                dd_error = dd_error - self.x[exp][:plot_range]
 
                 # double integrate ddx and calc. error
                 imu_error = self.integrate(self.imu[exp], self.tx[exp], self.dx[exp][0,:])
@@ -304,13 +320,51 @@ class Preprocess():
                 imu_error = imu_error - self.x[exp]
 
                 for i, ax in enumerate(axs[:,1]):
-                    ax.plot(self.tx[exp], d_error[:,i], color="g", label="dx error")
-                    ax.plot(self.tx[exp], dd_error[:,i], color="r", label="ddx error")
-                    ax.plot(self.tx[exp], imu_error[:,i], color="b", label="imu error")
+                    ax.plot(self.tx[exp][:plot_range], d_error[:plot_range,i], color="g", label="dx error")
+                    ax.plot(self.tx[exp][:plot_range], dd_error[:plot_range,i], color="r", label="ddx error")
+                    if i < 2:
+                        ax.plot(self.tx[exp][:plot_range], imu_error[:plot_range,i], color="c", label="imu error")
                     ax.legend()
                     ax.set_title(f"Dimension {i}")                    
 
                 plt.show()
+
+    def crossCorrelation(self):
+
+        delays = []
+        for exp in self.x:
+            for i in range(2):
+                ddx = self.ddx[exp][0:1000,i]
+                imu = self.imu_world[exp][0:1000,i]
+                # ddx = np.array( [0,0,0,1,2,3,4,0,0])
+                # imu = np.array( [0,1,2,3,4,0,0,0,0])
+
+                cc = signal.correlate(imu, ddx, mode="full")       
+                cc_argmax = np.argmax(cc)
+
+                delay_arr = np.arange(-len(imu) + 1, len(ddx))        
+                delay = delay_arr[cc_argmax]
+                delays.append(delay)
+
+        avg_delay = np.mean(delays)       
+        avg_delay = int(np.round(avg_delay))
+        print(f"avg. delay: {np.round(np.mean(delays),3)}, std: {np.round(np.std(delays),3)}")
+        
+        for exp in self.x:
+            if delay > 0:
+                self.tx[exp] = self.tx[exp][:-delay]
+                self.x[exp] = self.x[exp][:-delay,:]
+                self.dx[exp] = self.dx[exp][:-delay,:]
+                self.ddx[exp] = self.ddx[exp][:-delay,:]
+                self.u[exp] = self.u[exp][:-delay,:]
+                self.imu[exp] = self.imu[exp][delay:,:]
+            elif delay < 0:
+                self.tx[exp] = self.tx[exp][-delay:] - self.tx[exp][-delay]
+                self.x[exp] = self.x[exp][-delay:,:]
+                self.dx[exp] = self.dx[exp][-delay:,:]
+                self.ddx[exp] = self.ddx[exp][-delay:,:]
+                self.u[exp] = self.u[exp][-delay:,:]
+                self.imu[exp] = self.imu[exp][:delay,:]
 
     def integrate(self, dX, tX, X0):
         """
@@ -330,6 +384,24 @@ class Preprocess():
         
         return X
 
+    def rotMatrix(self, theta):
+        """
+        Calc. 3D rotational matrix for batch
+        Args:
+            theta: rotation aroung z-axis, tensor (N)
+        Returns:
+            rot_mat: rotational matrix, tensor (N,S,S)
+        """
+        rot_mat = np.zeros((theta.shape[0], 3, 3))
+        cos = np.cos(theta) # (N)
+        sin = np.sin(theta) # (N)
+        rot_mat[:,0,0] = cos
+        rot_mat[:,1,1] = cos
+        rot_mat[:,0,1] = -sin
+        rot_mat[:,1,0] = sin
+        rot_mat[:,2,2] = np.ones(theta.shape[0])
+        return rot_mat
+
             
 
 def main():
@@ -341,7 +413,23 @@ def main():
     pp.intermolateIMU(plot=False)
     pp.smoothIMU(plot=False)
     pp.diffPosition(plot=False)
-    pp.saveData()
+    pp.crossCorrelation()
+    pp.smoothIMU(plot=False)
+    pp.crossCorrelation()
+    # pp.saveData()
+
+    """
+    crup data in loadData for test subset
+    split diffPosition in calc and plot parts
+    write optimization fct. for shift:
+        while shift > 1:
+            1. calc. imu body to world
+            2. calc shift
+            3. update local variables
+        apply shift to global variables
+    """
+
+    
 
 
 if __name__ == "__main__":

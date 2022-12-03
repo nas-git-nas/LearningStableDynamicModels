@@ -17,9 +17,10 @@ class Args():
             self.black_model = True
             self.controlled_system = args["black_model"]["controlled_system"]
             self.lyapunov_correction = args["black_model"]["lyapunov_correction"]
-            self.poly_expand_U = False
+            self.u_map = args["black_model"]["u_map"]
         else:
             self.black_model = False
+            self.u_map = False
 
         if model_type == "HolohoverGrey" or model_type == "Signal2Thrust":
             self.grey_model = True
@@ -28,7 +29,8 @@ class Args():
             self.learn_signal2thrust = args["grey_model"]["learn_signal2thrust"]
             self.poly_expand_U = args["grey_model"]["poly_expand_U"]
         else:
-            self.grey_model = False       
+            self.grey_model = False
+            self.poly_expand_U = False       
   
         self.load_model = args["learn"]["load_model"]
         self.model_path = args["learn"]["model_path"]
