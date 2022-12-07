@@ -55,12 +55,18 @@ class HolohoverModelGrey(ModelGrey):
         self.motors_vec, self.motors_pos = self.initMotorPosVec() # unit vectors of thrust from motors, motor positions
         self.init_center_of_mass = torch.zeros(self.S) # initial center of mass
         self.init_inertia = torch.tensor([0.0003599]) # intitial inertia
-        self.init_signal2thrust = torch.tensor([[0.19089428, 0.73228747, -0.27675822], # initial signal2thrust coeff.
-                                                [0.21030774, 0.71018331, -0.26599642], # tensor (M, poly_expand_U)
-                                                [0.08407954, 1.01239162, -0.47014436], # for each motor [a1, a2, a3]
-                                                [0.23272980, 0.63304683, -0.19689546], # where thrust = a1*u + a2*u^2 + a3*u^3
-                                                [0.16751077, 0.85337578, -0.34435633],
-                                                [0.19129567, 0.82140377, -0.33533427] ])
+        self.init_signal2thrust = torch.tensor([[ 0.05222618, 1.01322122, -0.43982188], # initial signal2thrust coeff.
+                                                [ 0.07575471, 0.97691568, -0.41957119], # tensor (M, poly_expand_U)
+                                                [-0.04026684, 1.24835096, -0.60133519], # for each motor [a1, a2, a3]
+                                                [ 0.10685955, 0.87521615, -0.33347072], # where thrust = a1*u + a2*u^2 + a3*u^3
+                                                [ 0.04163681, 1.09222022, -0.4773263 ],
+                                                [ 0.06159755, 1.07667052, -0.4829604 ] ])
+        self.init_thrust2signal = torch.tensor([[ 3.45540985, -6.24970716, 5.28273825], # initial thrust2signal coeff.
+                                                [ 3.37308342, -5.9961999, 5.04819273], # tensor (M, poly_expand_U)
+                                                [ 3.72163413, -7.48011309, 6.7394554 ], # for each motor [a1, a2, a3]
+                                                [ 3.31211471, -5.68575084, 4.62548379], # where u = a1*thrust + a2*thrust^2 + a3*thrust^3
+                                                [ 3.32645262, -5.8279771, 4.73633899],
+                                                [ 3.32239947, -5.95594103, 4.96467792] ])
 
         # we measured the signal2thrust coeff. of degree=3, 
         # if a different polynomial expansion is desired the shape of init_signal2thrust must be adapted                           
@@ -81,7 +87,16 @@ class HolohoverModelGrey(ModelGrey):
             if args.learn_signal2thrust:
                 lin_fct.weight.requires_grad = True
             else:
-                lin_fct.weight.requires_grad = False        
+                lin_fct.weight.requires_grad = False    
+
+        # thrust2signal mapping
+        tnn_input_size = args.poly_expand_U
+        tnn_output_size = 1
+        self.tnn_thr2sig_fcts = [nn.Linear(tnn_input_size, tnn_output_size, bias=False, dtype=torch.float32) for _ in range(self.M)]
+
+        for i, lin_fct in enumerate(self.tnn_thr2sig_fcts):
+            lin_fct.weight = torch.nn.parameter.Parameter(self.init_thrust2signal[i,:].detach().clone().reshape(1, args.poly_expand_U))
+            lin_fct.weight.requires_grad = False     
 
         # Center of mass
         self.center_of_mass = torch.nn.parameter.Parameter(self.init_center_of_mass.detach().clone())
@@ -144,6 +159,23 @@ class HolohoverModelGrey(ModelGrey):
 
         return thrust
 
+    def thrust2signal(self, thrust):
+        """
+        Description: motor thrust to motor signal mapping
+        Args:
+            thrust: motor thrust, tensor (N, M*poly_expand_U)
+        Returns:
+            U: motor signals batch, tensor (N, M)
+        """
+        assert thrust.shape[1]%self.M == 0
+        deg = int(thrust.shape[1] / self.M) # degree of polynomial expansion
+
+        U = torch.zeros((thrust.shape[0], self.M), dtype=torch.float32)
+        for i, lin_fct in enumerate(self.tnn_thr2sig_fcts):
+            U[:,i] = lin_fct(thrust[:,int(i*deg):int((i+1)*deg)]).flatten()
+
+        return U
+
     def thrust2acc(self, thrust, X):
         """       
         Args: 
@@ -169,7 +201,7 @@ class HolohoverModelGrey(ModelGrey):
 
         # calc. acceleration, Fw_sum[0,:] = [Fx, Fy, Fz] and Mb[0,:] = [Mx, My, Mz]
         # holohover moves in a plane -> Fz = Mx = My = 0, also Mz_body = Mz_world
-        acc = Fw_sum/self.mass #+ Mb_sum/self.inertia
+        acc = Fw_sum/self.mass + Mb_sum/self.inertia
 
         return acc
 

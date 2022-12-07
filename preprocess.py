@@ -659,29 +659,23 @@ class Preprocess():
                 plt.show()
 
 def main():
-    pp = Preprocess(series="holohover_20221130")
-    pp.loadData(crop_data=10000, crop_exp=1)
+    pp = Preprocess(series="signal_20221206")
+    pp.loadData(crop_data=None, crop_exp=None)
     pp.stamp2seconds()
     pp.cropData(plot=False)
     pp.intermolateU(plot=False)
     pp.intermolateIMU(plot=False)
     pp.diffPosition(plot=False)
 
-    pp.imuRemoveOffset(plot=False)
-    pp.imuShift(plot=False)
+    # pp.imuRemoveOffset(plot=False)
+    # pp.imuShift(plot=False)
 
-    pp.uShift(plot=False)
-    # pp.smoothDDX_U(plot=True)
+    # pp.uShift(plot=False)
+    # # pp.smoothDDX_U(plot=True)
 
-    ddx_u = pp.calcDDX_U(x_dict=pp.x, u_dict=pp.u, plot=True)
-    
+    # ddx_u = pp.calcDDX_U(x_dict=pp.x, u_dict=pp.u, plot=True)
 
-    
-    
-    
-
-
-    # pp.saveData()
+    pp.saveData()
 
     
 

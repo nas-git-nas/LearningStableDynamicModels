@@ -3,8 +3,12 @@ import numpy as np
 from scipy import stats, optimize, interpolate, signal
 import os
 import copy
+import torch
 
 from preprocess import Preprocess
+from src.args import Args
+from src.model_grey import HolohoverModelGrey
+from src.system import HolohoverSystem
 
 def polyFct2(x, a1, a2):
     return a1*x + a2*x*x
@@ -17,6 +21,34 @@ def polyFct4(x, a1, a2, a3, a4):
 
 def polyFct5(x, a1, a2, a3, a4, a5):
     return a1*x + a2*(x**2) + a3*(x**3) + a4*(x**4) + a5*(x**5)
+
+def expRise(X, tau, delay):
+    """
+    First order model
+    Args:
+        X: (time, y_final)
+        tau: time const.
+        delay: delay
+    Returns:
+        y: value at time t
+    """
+    (t, y_final) = X
+    return np.maximum(0, y_final*(1 - np.exp(-(t - delay)/tau)))
+    #return np.sign(gain)*np.maximum(0, np.abs(gain)*(1 - np.exp(-(t - delay)/tau)))
+
+def expFall(X, tau, delay):
+    """
+    First order model
+    Args:
+        X: (time, y_init)
+        tau: time const.
+        delay: delay
+    Returns:
+        y: value at time t
+    """
+    (t, y_init) = X
+    return np.minimum(y_init, y_init*np.exp(-(t - delay)/tau))
+
 
 class Signal2Thrust():
     def __init__(self, series) -> None:
@@ -32,6 +64,15 @@ class Signal2Thrust():
         self.tu = pp.tu
         self.force = pp.force
         self.tforce = pp.tforce
+
+        if torch.cuda.is_available():  
+            dev = "cuda:0" 
+        else:  
+            dev = "cpu"
+        device = torch.device(dev) 
+        args = Args(model_type="HolohoverGrey")
+        self.model = HolohoverModelGrey(args=args, dev=device)
+        self.sys = HolohoverSystem(args=args, dev=device)
 
     def saveData(self):
         """
@@ -109,14 +150,14 @@ class Signal2Thrust():
         # loop through all experiments        
         for exp in force:
 
-            signal_state_prev = True
+            signal_state_prev = False
             signal_time_start = 0 
             mot = 0
             sig = 0
             for i, (tui, ui) in enumerate(zip(tu[exp], u[exp])):
                 
                 # check if currently a signal is send
-                if np.sum(ui) > 0:
+                if np.sum(ui) > len(ui)*0.025:
                     signal_state = True
                 else: 
                     signal_state = False
@@ -136,9 +177,10 @@ class Signal2Thrust():
                         sig = np.max(u[exp][i-1])
                         thrusts[mot][sig] = {   "idx_start":idx_start, "idx_stop":idx_stop, "time":time, "force":force_sig, 
                                                 "bg":None, "bg_time":None, "norm":None, "mean":None, "std":None }
-                    else: 
-                        thrusts[mot][sig]["bg"] = force[exp][idx_start:idx_stop,:]
-                        thrusts[mot][sig]["bg_time"] = tforce[exp][idx_start:idx_stop]
+                    else:
+                        if sig in thrusts[mot].keys():
+                            thrusts[mot][sig]["bg"] = force[exp][idx_start:idx_stop,:]
+                            thrusts[mot][sig]["bg_time"] = tforce[exp][idx_start:idx_stop]
                     
                     # set starting time of signal while removing 0.5s
                     signal_time_start = tui + trigger_delay
@@ -164,20 +206,31 @@ class Signal2Thrust():
 
             for mot in thrusts:
                 for sig in thrusts[mot]:
-                    bg_x = np.mean(thrusts[mot][sig]["bg"][:,0])
-                    bg_y = np.mean(thrusts[mot][sig]["bg"][:,1])
+                    bg_x = thrusts[mot][sig]["bg"][:,0]
+                    bg_y = thrusts[mot][sig]["bg"][:,1]
                     bg_idx = thrusts[mot][sig]["idx_stop"]
                     
+                    # de-bias x and y quantities
+                    force_x = thrusts[mot][sig]["force"][:,0] - np.mean(bg_x)
+                    force_y = thrusts[mot][sig]["force"][:,1] - np.mean(bg_y)
+                    bg_x = bg_x - np.mean(bg_x)
+                    bg_y = bg_y - np.mean(bg_y)
 
-                    force_x = thrusts[mot][sig]["force"][:,0] - bg_x
-                    force_y = thrusts[mot][sig]["force"][:,1] - bg_y
-                    thrusts[mot][sig]["norm"] = np.sqrt(np.power(force_x, 2) + np.power(force_y, 2))
-                    thrusts[mot][sig]["mean"] = np.mean(thrusts[mot][sig]["norm"])
-                    thrusts[mot][sig]["std"] = np.std(thrusts[mot][sig]["norm"])
+                    # calc. norm of forces
+                    force_norm = np.sqrt(np.power(force_x, 2) + np.power(force_y, 2))
+                    bg_norm = np.sqrt(np.power(bg_x, 2) + np.power(bg_y, 2))
+
+                    # de-bias norm
+                    force_norm = force_norm - np.mean(bg_norm)
+                    bg_norm = bg_norm - np.mean(bg_norm)
+
+                    thrusts[mot][sig]["norm"] = force_norm
+                    thrusts[mot][sig]["mean"] = np.mean(force_norm)
+                    thrusts[mot][sig]["std"] = np.std(force_norm)
             
                     if plot:
-                        offset_plot_x.append(bg_x)
-                        offset_plot_y.append(bg_y)
+                        offset_plot_x.append(np.mean(bg_x))
+                        offset_plot_y.append(np.mean(bg_y))
                         offset_plot_t.append(tforce[exp][bg_idx])
                         axs[1,0].plot(thrusts[mot][sig]["time"], force_x, color="b")                    
                         axs[1,1].plot(thrusts[mot][sig]["time"], force_y, color="g")
@@ -398,7 +451,7 @@ class Signal2Thrust():
         if plot:
             plt.show()
 
-    def motorTransition(self, plot=False):
+    def motorTransition(self, plot=False, signal_space=False):
         thrusts_del = self.getThrust(trigger_delay=0.5, plot=False)
         thrusts = self.getThrust(trigger_delay=0.0, plot=False)
 
@@ -437,9 +490,9 @@ class Signal2Thrust():
                 bg_norm = bg_norm - np.mean(bg_norm_del)
                 bg_norm_del = bg_norm_del - np.mean(bg_norm_del)
 
-                # calc. smooth approx of force norm
-                force_smooth = signal.savgol_filter(force_norm, window_length=33, polyorder=2, axis=0)
-                bg_smooth = signal.savgol_filter(bg_norm, window_length=33, polyorder=2, axis=0)
+                if signal_space:
+                    force_norm = self.thrust2signal(force_norm, mot)
+                    bg_norm = self.thrust2signal(bg_norm, mot)
 
                 # calc. transition zone
                 noise_thr = 2*(np.max(bg_norm_del) - np.min(bg_norm_del))
@@ -450,22 +503,28 @@ class Signal2Thrust():
                     trans_dw[mot][sig] = {}
 
                     # start/stop indices of transition zones
-                    trans_up[mot][sig]["idx_start"] = np.argmax(force_smooth-np.max([0,force_smooth[0]]) > 0.1*thrusts_del[mot][sig]["mean"])
-                    trans_up[mot][sig]["idx_stop"] = np.argmax(force_smooth > 0.9*thrusts_del[mot][sig]["mean"])
-                    trans_dw[mot][sig]["idx_start"] = np.argmax(bg_smooth < 0.9*thrusts_del[mot][sig]["mean"])
-                    trans_dw[mot][sig]["idx_stop"] = np.argmax(bg_smooth < 0.1*thrusts_del[mot][sig]["mean"])
+                    if signal_space:
+                        steady_state = sig
+                    else:
+                        steady_state = thrusts_del[mot][sig]["mean"]
 
-                    # calc. delay and transition times
-                    trans_up[mot][sig]["delay"] = thrusts[mot][sig]["time"][trans_up[mot][sig]["idx_start"]] - thrusts[mot][sig]["time"][0]
-                    trans_dw[mot][sig]["delay"] = thrusts[mot][sig]["bg_time"][trans_dw[mot][sig]["idx_start"]] - thrusts[mot][sig]["bg_time"][0]
-                    trans_up[mot][sig]["trans"] = thrusts[mot][sig]["time"][trans_up[mot][sig]["idx_stop"]] \
-                                                    - thrusts[mot][sig]["time"][trans_up[mot][sig]["idx_start"]]
-                    trans_dw[mot][sig]["trans"] = thrusts[mot][sig]["bg_time"][trans_dw[mot][sig]["idx_stop"]] \
-                                                    - thrusts[mot][sig]["bg_time"][trans_dw[mot][sig]["idx_start"]]
+                    # calc. first order approx.
+                    fit_up_X = (thrusts[mot][sig]["time"]-thrusts[mot][sig]["time"][0], 
+                                np.ones((len(thrusts[mot][sig]["time"])))*steady_state)
+                    [tau_up, delay_up], _ = optimize.curve_fit(expRise, fit_up_X, force_norm, [0.05, 0.04])
 
-                    # calc. transition slope
-                    trans_up[mot][sig]["slope"] = np.mean(force_norm_del) / trans_up[mot][sig]["trans"]
-                    trans_dw[mot][sig]["slope"] = - np.mean(force_norm_del) / trans_dw[mot][sig]["trans"]
+                    fit_dw_X = (thrusts[mot][sig]["bg_time"]-thrusts[mot][sig]["bg_time"][0], 
+                                np.ones((len(thrusts[mot][sig]["bg_time"])))*steady_state)
+                    [tau_dw, delay_dw], _ = optimize.curve_fit(expFall, fit_dw_X, bg_norm, [0.05, 0.04])
+
+                    # calc. time of exponential to reach certain procentage of final value
+                    thr_y_final = 0.95
+                    trans_up[mot][sig]["trans"] = - tau_up * np.log(1-thr_y_final)
+                    trans_dw[mot][sig]["trans"] = - tau_dw * np.log(1-thr_y_final)
+                    trans_up[mot][sig]["delay"] = delay_up
+                    trans_dw[mot][sig]["delay"] = delay_dw
+                    trans_up[mot][sig]["tau"] = tau_up
+                    trans_dw[mot][sig]["tau"] = tau_dw
 
                 if plot:
                     k = int(i/len(axs[0]))
@@ -473,96 +532,127 @@ class Signal2Thrust():
 
                     axs[k,l].plot(thrusts[mot][sig]["time"], force_norm, color="m")                    
                     axs[k,l].plot(thrusts[mot][sig]["bg_time"], bg_norm, color="b")
-                    axs[k,l].plot(thrusts[mot][sig]["time"], force_smooth, color="g")
-                    axs[k,l].plot(thrusts[mot][sig]["bg_time"], bg_smooth, color="g")
+                    
                     if noise_thr < thrusts_del[mot][sig]["mean"]:
                         axs[k,l].axvspan(xmin=thrusts[mot][sig]["time"][0], 
-                                    xmax=thrusts[mot][sig]["time"][trans_up[mot][sig]["idx_start"]], color="tab:gray", alpha=0.25)
-                        axs[k,l].axvspan(xmin=thrusts[mot][sig]["time"][trans_up[mot][sig]["idx_start"]], 
-                                    xmax=thrusts[mot][sig]["time"][trans_up[mot][sig]["idx_stop"]], color="tab:brown", alpha=0.5)
+                                            xmax=thrusts[mot][sig]["time"][0]+delay_up, color="tab:gray", alpha=0.25)
+                        axs[k,l].axvspan(xmin=thrusts[mot][sig]["time"][0]+delay_up, 
+                                            xmax=thrusts[mot][sig]["time"][0]+delay_up+trans_up[mot][sig]["trans"], 
+                                            color="tab:brown", alpha=0.5)
                         axs[k,l].axvspan(xmin=thrusts[mot][sig]["bg_time"][0], 
-                                    xmax=thrusts[mot][sig]["bg_time"][trans_dw[mot][sig]["idx_start"]], color="tab:gray", alpha=0.25)
-                        axs[k,l].axvspan(xmin=thrusts[mot][sig]["bg_time"][trans_dw[mot][sig]["idx_start"]], 
-                                    xmax=thrusts[mot][sig]["bg_time"][trans_dw[mot][sig]["idx_stop"]], color="tab:brown", alpha=0.5)
-                        x_up = np.linspace(thrusts[mot][sig]["time"][trans_up[mot][sig]["idx_start"]], 
-                                            thrusts[mot][sig]["time"][trans_up[mot][sig]["idx_stop"]], 100)
-                        y_up = trans_up[mot][sig]["slope"]*(x_up-thrusts[mot][sig]["time"][trans_up[mot][sig]["idx_start"]])
-                        axs[k,l].plot(x_up, y_up, color="r")
-                        x_dw = np.linspace(thrusts[mot][sig]["bg_time"][trans_dw[mot][sig]["idx_start"]], 
-                                            thrusts[mot][sig]["bg_time"][trans_dw[mot][sig]["idx_stop"]], 100)
-                        y_dw = trans_dw[mot][sig]["slope"]*(x_dw-thrusts[mot][sig]["bg_time"][trans_dw[mot][sig]["idx_start"]]) + np.mean(force_norm_del)
-                        axs[k,l].plot(x_dw, y_dw, color="r")
+                                            xmax=thrusts[mot][sig]["bg_time"][0]+delay_dw, color="tab:gray", alpha=0.25)
+                        axs[k,l].axvspan(xmin=thrusts[mot][sig]["bg_time"][0]+delay_dw, 
+                                            xmax=thrusts[mot][sig]["bg_time"][0]+delay_dw+trans_dw[mot][sig]["trans"], 
+                                            color="tab:brown", alpha=0.5)
+
+                        # if not signal_space:
+                        axs[k,l].plot(thrusts[mot][sig]["time"], expRise(X=fit_up_X, tau=tau_up, delay=delay_up), color="g")
+                        axs[k,l].plot(thrusts[mot][sig]["bg_time"], expFall(X=fit_dw_X, tau=tau_dw, delay=delay_dw), color="g")
                     axs[k,l].set_title(f"Signal: {sig}")
                     # axs[k,l].set_xticks([])
-                    if l == 0: axs[k,l].set_ylabel("thrust (N)")
+                    if signal_space:
+                        if l == 0: axs[k,l].set_ylabel("signal")
+                    else:
+                        if l == 0: axs[k,l].set_ylabel("thrust (N)")
                     if k == 3: axs[k,l].set_xlabel("seconds (s)")
                 
             if plot:
                 plt.show()
 
-
-        self.motelTransition(trans_up, trans_dw, plot=True)
-
         return trans_up, trans_dw
 
-    def motelTransition(self, trans_up, trans_dw, plot=False):
+    def thrust2signal(self, thrust_mot, mot):
 
-        if plot:
-            fig, axs = plt.subplots(nrows=6, ncols=2, figsize =(12, 8))
+        thrust = torch.zeros((len(thrust_mot), 6), dtype=torch.float32)
+        thrust[:,mot-1] = torch.tensor(thrust_mot, dtype=torch.float32)
 
+        thrust_poly = self.sys.polyExpandU(thrust)
+        sig = self.model.thrust2signal(thrust_poly)
+
+        return sig[:,mot-1].detach().numpy()
+
+    def plotTransTime(self, trans_up, trans_dw):
+        fig, axs = plt.subplots(nrows=3, ncols=2, figsize =(8, 12))
+
+        up_delay_all = []
+        dw_delay_all = []
+        up_trans_all = []       
+        dw_trans_all = []
+        up_tau_all = []
+        dw_tau_all = []
+        
+        up_delay = []
+        dw_delay = []
+        up_trans = []          
+        dw_trans = []
+        up_tau = []
+        dw_tau = []
         for i, mot in enumerate(trans_up):
-
+            sigs = []
+            up_delay = []
+            dw_delay = []
+            up_trans = []          
+            dw_trans = []
+            up_tau = []
+            dw_tau = []
             for j, sig in enumerate(trans_up[mot]):
 
-                if plot:
-                    k = int(i/len(axs[0]))
-                    l = i % len(axs[0])
+                sigs.append(sig)
+                up_delay.append(trans_up[mot][sig]["delay"])
+                dw_delay.append(trans_dw[mot][sig]["delay"])
+                up_trans.append(trans_up[mot][sig]["trans"])               
+                dw_trans.append(trans_dw[mot][sig]["trans"])
+                up_tau.append(trans_up[mot][sig]["tau"])               
+                dw_tau.append(trans_dw[mot][sig]["tau"])
 
-                    x_up = [trans_up[mot][sig]["delay"], trans_up[mot][sig]["delay"] + trans_up[mot][sig]["trans"]]
-                    y_up = [0, trans_up[mot][sig]["slope"]*trans_up[mot][sig]["trans"]]
+            axs[0,0].plot(sigs, up_delay, marker = 'o', label=f"motor {mot}")
+            axs[0,1].plot(sigs, dw_delay, marker = 'o', label=f"motor {mot}")
+            axs[1,0].plot(sigs, up_trans, marker = 'o', label=f"motor {mot}")
+            axs[1,1].plot(sigs, dw_trans, marker = 'o', label=f"motor {mot}")
+            axs[2,0].plot(sigs, up_tau, marker = 'o', label=f"motor {mot}")
+            axs[2,1].plot(sigs, dw_tau, marker = 'o', label=f"motor {mot}")
+            up_delay_all.append(np.mean(up_delay))
+            dw_delay_all.append(np.mean(dw_delay))
+            up_trans_all.append(np.mean(up_trans))            
+            dw_trans_all.append(np.mean(dw_trans))
+            up_tau_all.append(np.mean(up_tau))            
+            dw_tau_all.append(np.mean(dw_tau))
 
-                    axs[i,0].plot(x_up, y_up, marker = 'o')
-                    
-
-                    x_dw = [trans_dw[mot][sig]["delay"], trans_dw[mot][sig]["delay"] + trans_dw[mot][sig]["trans"]]
-                    y_dw = [0, trans_dw[mot][sig]["slope"]*trans_dw[mot][sig]["trans"]]
-                    axs[i,1].plot(x_dw, y_dw, marker = 'o')
-            
-            axs[i,0].set_ylabel("motor {i} thrust (N)")
-            if i == 5: axs[i,0].set_xlabel("time (s)")
-            if i == 5: axs[i,1].set_xlabel("time (s)")
-            
-        if plot:
-            plt.show()
+        axs[0,0].set_title(f"Up delay (mean={np.round(np.mean(up_delay_all),3)})")
+        axs[0,1].set_title(f"Down delay (mean={np.round(np.mean(dw_delay_all),3)})")
+        axs[1,0].set_title(f"Up trans (mean={np.round(np.mean(up_trans_all),3)})")        
+        axs[1,1].set_title(f"Down trans (mean={np.round(np.mean(dw_trans_all),3)})")
+        axs[2,0].set_title(f"Up tau (mean={np.round(np.mean(up_tau_all),3)})")        
+        axs[2,1].set_title(f"Down tau (mean={np.round(np.mean(dw_tau_all),3)})")
+        axs[0,0].set_ylabel("time (s)")
+        axs[1,0].set_ylabel("time (s)")
+        axs[2,0].set_xlabel("signal")
+        axs[2,0].set_ylabel("time (s)")
+        axs[2,1].set_xlabel("signal")
+        axs[0,0].legend()
+        axs[1,0].legend()
+        axs[0,1].legend()
+        axs[1,1].legend()
+        axs[2,0].legend()
+        axs[2,1].legend()
+        plt.show()
 
 
 
 
 
 def main():
-    s2t = Signal2Thrust(series="signal_20221121")
+    s2t = Signal2Thrust(series="signal_20221206")
+
     # thrusts = s2t.getThrust(plot=False)
-    # s2t.approxSignal2Thrust(thrusts, plot=False, print_coeff=True)
-    # s2t.approxThrust2Signal(thrusts, plot=True, print_coeff=True)
+    # s2t.approxSignal2Thrust(thrusts, plot=True, print_coeff=False)
+    # s2t.approxThrust2Signal(thrusts, plot=True, print_coeff=False)
 
     # s2t.intermolateForce(plot=True)
     # s2t.saveData()
 
-    s2t.motorTransition(plot=False)
-
-    # thrusts_del = s2t.getThrust(trigger_delay=0.5, plot=False)
-    # thrusts = s2t.getThrust(trigger_delay=0.0, plot=False)
-
-
-    # for mot in thrusts:
-    #     for sig in thrusts[mot]:
-    #         # mean_del = thrusts_del[mot][sig]["mean"] 
-    #         # mean = thrusts[mot][sig]["mean"]
-    #         # error = abs(mean-mean_del)
-    #         # print(f"Mean delayed: {mean_del}, \tmean: {mean},\t error: {error}")
-
-    #         plt.plot(thrusts[mot][sig]["time"], thrusts[mot][sig]["norm"], color="m")
-    #         plt.show()
+    trans_up, trans_dw = s2t.motorTransition(plot=False, signal_space=False)
+    s2t.plotTransTime(trans_up, trans_dw)
 
 if __name__ == "__main__":
     main()

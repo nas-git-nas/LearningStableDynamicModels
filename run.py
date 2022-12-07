@@ -61,8 +61,8 @@ def main():
     ld.saveModel()
 
     # plot results
-    plot = Plot(dev=device, model=model, system=sys, learn=ld)
-    plot.greyModel(ueq)
+    # plot = Plot(dev=device, model=model, system=sys, learn=ld)
+    # plot.greyModel(ueq)
 
     # simulate system
     # sim = Simulation(sys, model)

@@ -13,7 +13,7 @@
     {
         "learn_center_of_mass": false,
         "learn_inertia": false,
-        "learn_signal2thrust": true,
+        "learn_signal2thrust": false,
         "poly_expand_U": 3
     },
     "learn":
