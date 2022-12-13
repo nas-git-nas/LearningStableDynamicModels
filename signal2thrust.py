@@ -347,9 +347,9 @@ class Signal2Thrust():
             
             if print_coeff:
                 print(f"\nMotor: signal->thrust {mot+1} (poly.: a1*x + a2*x^2 + ... an*x^n)")
-                print(coeff)
+                print(f"[{coeff[0]}, {coeff[1]}, {coeff[2]}]")
                 print(f"Motor: signal->thrust {mot+1} (poly.: an*x^n + a(n-1)*x^(n-1) + ... + a1*x)")
-                print(np.flip(coeff))
+                print(f"[{np.flip(coeff)[0]}, {np.flip(coeff)[1]}, {np.flip(coeff)[2]}]")
 
             if plot:
                 lin_x = np.linspace(0, 1, 100)
@@ -431,9 +431,9 @@ class Signal2Thrust():
             
             if print_coeff:
                 print(f"\nMotor: thrust->signal {mot+1} (poly.: a1*x + a2*x^2 + ... an*x^n)")
-                print(coeff)
+                print(f"[{coeff[0]}, {coeff[1]}, {coeff[2]}]")
                 print(f"Motor: thrust->signal {mot+1} (poly.: an*x^n + a(n-1)*x^(n-1) + ... + a1*x)")
-                print(np.flip(coeff))
+                print(f"[{np.flip(coeff)[0]}, {np.flip(coeff)[1]}, {np.flip(coeff)[2]}]")
 
             if plot:
                 lin_x = np.linspace(0, 1, 100)
@@ -644,9 +644,9 @@ class Signal2Thrust():
 def main():
     s2t = Signal2Thrust(series="signal_20221206")
 
-    # thrusts = s2t.getThrust(plot=False)
-    # s2t.approxSignal2Thrust(thrusts, plot=True, print_coeff=False)
-    # s2t.approxThrust2Signal(thrusts, plot=True, print_coeff=False)
+    thrusts = s2t.getThrust(plot=False)
+    s2t.approxSignal2Thrust(thrusts, plot=False, print_coeff=True)
+    s2t.approxThrust2Signal(thrusts, plot=False, print_coeff=True)
 
     # s2t.intermolateForce(plot=True)
     # s2t.saveData()

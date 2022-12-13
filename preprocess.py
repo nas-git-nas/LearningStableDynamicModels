@@ -136,7 +136,7 @@ class Preprocess():
         U = np.empty((0,self.M))
         for exp in self.tx:
             Xnew = np.concatenate((self.x[exp], self.dx[exp]), axis=1)
-            dXnew = np.concatenate((self.dx[exp], self.imu_world[exp][:,0:2], self.ddx[exp][:,2:3]), axis=1)
+            dXnew = np.concatenate((self.dx[exp], self.ddx[exp]), axis=1)
 
             X = np.concatenate((X, Xnew), axis=0)
             dX = np.concatenate((dX, dXnew), axis=0)
@@ -254,8 +254,8 @@ class Preprocess():
         Polynomial interpolation of control input to match with x
         """
         for exp in self.u:
-            print(f"tu min: {self.tu[exp][0]}, tx min: {self.tx[exp][0]}")
-            print(f"tu max: {self.tu[exp][-1]}, tx max: {self.tx[exp][-1]}")
+            # print(f"tu min: {self.tu[exp][0]}, tx min: {self.tx[exp][0]}")
+            # print(f"tu max: {self.tu[exp][-1]}, tx max: {self.tx[exp][-1]}")
 
             inter_fct = interpolate.interp1d(self.tu[exp], self.u[exp], axis=0)
             u_inter = inter_fct(self.tx[exp])
@@ -269,8 +269,39 @@ class Preprocess():
                     ax.set_title(f"Control input {i}")
                 plt.show()
 
+            
             self.u[exp] = u_inter
             self.tu[exp] = [] # not used anymore
+
+    def approxU(self, plot=False):
+        tau_up = 0.045
+        tau_dw = 0.021
+        for exp in self.u:
+            u = self.u[exp]          
+            u_approx = np.zeros(u.shape)
+            for i in range(1, u.shape[0]):
+
+                tau = np.zeros((6))
+                for j in range(6):
+                    if u[i,j] > u_approx[i-1,j]:
+                        tau[j] = tau_up
+                    else:
+                        tau[j] = tau_dw
+
+                u_approx[i,:] = u_approx[i-1,:] + (self.tx[exp][i]-self.tx[exp][i-1])*(u[i,:] - u_approx[i-1,:])/tau     
+
+            if plot:
+                fig, axs = plt.subplots(nrows=self.u[exp].shape[1], figsize =(8, 8))             
+                for i, ax in enumerate(axs):
+                    ax.plot(self.tx[exp], u[:,i], color="b", label="u")
+                    ax.plot(self.tx[exp], u_approx[:,i], '--', color="r", label="u approx.")
+                    ax.legend()
+                    ax.set_title(f"Control input {i}")
+                plt.show()
+
+            self.u[exp] = u_approx
+
+
 
     def intermolateIMU(self, plot=False):
         """
@@ -312,10 +343,10 @@ class Preprocess():
         for exp in self.x:
             fig, axs = plt.subplots(nrows=self.x[exp].shape[1], ncols=2, figsize =(8, 8))             
             for i, ax in enumerate(axs[:,0]):
-                ax.plot(self.tx[exp], self.x[exp], color="b", label="pos")
-                ax.plot(self.tx[exp], self.dx[exp], color="g", label="vel")
-                ax.plot(self.tx[exp], self.ddx[exp], color="r", label="acc")
-                ax.plot(self.tx[exp], self.imu[exp], color="c", label="imu")
+                ax.plot(self.tx[exp], self.x[exp][:,i], color="b", label="pos")
+                ax.plot(self.tx[exp], self.dx[exp][:,i], color="g", label="vel")
+                ax.plot(self.tx[exp], self.ddx[exp][:,i], color="r", label="acc")
+                #ax.plot(self.tx[exp], self.imu_world[exp], color="c", label="imu")
                 # ax.set_ylim([np.min(self.ddx[exp][:,i]), np.max(self.ddx[exp][:,i])])
                 ax.legend()
                 ax.set_title(f"Dimension {i}")
@@ -330,15 +361,15 @@ class Preprocess():
             dd_error = dd_error - self.x[exp]
 
             # double integrate ddx and calc. error
-            imu_error = self.integrate(self.imu[exp], self.tx[exp], self.dx[exp][0,:])
-            imu_error = self.integrate(imu_error, self.tx[exp], self.x[exp][0,:])
-            imu_error = imu_error - self.x[exp]
+            # imu_error = self.integrate(self.imu[exp], self.tx[exp], self.dx[exp][0,:])
+            # imu_error = self.integrate(imu_error, self.tx[exp], self.x[exp][0,:])
+            # imu_error = imu_error - self.x[exp]
 
             for i, ax in enumerate(axs[:,1]):
                 ax.plot(self.tx[exp], d_error[:,i], color="g", label="dx error")
                 ax.plot(self.tx[exp], dd_error[:,i], color="r", label="ddx error")
-                if i < 2:
-                    ax.plot(self.tx[exp], imu_error[:,i], color="c", label="imu error")
+                # if i < 2:
+                #     ax.plot(self.tx[exp], imu_error[:,i], color="c", label="imu error")
                 ax.legend()
                 ax.set_title(f"Dimension {i}")                    
 
@@ -450,8 +481,9 @@ class Preprocess():
 
     def uShift(self, plot=False):
         x = self.x.copy()
+        dx = self.dx.copy()
+        ddx = self.ddx.copy()
         u = self.u.copy()
-        imu_world = self.imu_world.copy()
 
         print("\nStarting u shift optimization:")
         shift = np.Inf
@@ -459,41 +491,35 @@ class Preprocess():
         iter = 0
         max_iter = 40
         while abs(shift)!=0 and iter<max_iter:
-            # convert imu data from body to world frame using shifted theta data
-            ddx_u = self.calcDDX_U(x_dict=x, u_dict=u, plot=False)
+            ddx_u = self.calcDDX_U(x_dict=x, dx_dict=dx, u_dict=u, plot=False)
 
-            # calc. highest cross-correlation between imu and ddx data
-            shift, shift_std, corr_max = self.calcCrossCorr(sig_a_dict=imu_world, sig_b_dict=ddx_u)      
+            # calc. highest cross-correlation between ddx_u and ddx data
+            shift, shift_std, corr_max = self.calcCrossCorr(sig_a_dict=ddx, sig_b_dict=ddx_u)      
 
             # shift local data
-            step = abs(shift)
-            for exp in x:
-                if shift > 0:   
-                    u[exp] = u[exp][:-step,:]
-                    x[exp] = x[exp][step:,:]
-                    imu_world[exp] = imu_world[exp][step:,:]
-                    total_shift += step
-                elif shift < 0:   
-                    u[exp] = u[exp][step:,:]
-                    x[exp] = x[exp][:-step,:]
-                    imu_world[exp] = imu_world[exp][:-step,:]
-                    total_shift -= step
+            assert shift >= 0, "signal a (ddx) must be delayed wrt. signal b (ddx_u)"
+            for exp in x: 
+                u[exp] = u[exp][:-shift,:]
+                x[exp] = x[exp][shift:,:]
+                dx[exp] = dx[exp][shift:,:]
+                ddx[exp] = ddx[exp][shift:,:]
+            total_shift += shift
 
             # update variables
             iter += 1
             print(f"iter: {iter}: \ttot. shift: {total_shift}, \titer. shift: {shift}, \tstd. shift: {np.round(shift_std, 3)}, \tcorr. max: {corr_max}")
 
-        # calc. unshifted imu_world data
-        imu_world_unshifted = self.imu_world.copy()
+        ddx_u_unshifted = self.calcDDX_U(x_dict=self.x, dx_dict=self.dx, u_dict=self.u, plot=False)
+        ddx_unshifted = self.ddx.copy()
 
         # shift data
         if shift == 0:
             self.shiftUData(shift=total_shift)
         else:
-            print(f"Finding optimal imu shift failed!")
+            print(f"Finding optimal u shift failed!")
 
         # calc. shifted ddx_u data
-        self.ddx_u = self.calcDDX_U(x_dict=self.x, u_dict=self.u, plot=False)
+        self.ddx_u = self.calcDDX_U(x_dict=self.x, dx_dict=self.dx, u_dict=self.u, plot=False)
 
         if plot:
 
@@ -501,32 +527,47 @@ class Preprocess():
                 fig, axs = plt.subplots(nrows=self.x[exp].shape[1], ncols=1, figsize =(8, 8))   
 
                 delay_s = total_shift * (self.tx[exp][-1] - self.tx[exp][0]) / self.tx[exp].shape[0]
-                fig.suptitle(f'Avg. delay of imu wrt. control: {np.round(delay_s*1000)}ms ({total_shift} shifts)')
-                for i, ax in enumerate(axs):
-                    ax.plot(self.tx[exp], imu_world_unshifted[exp][:self.imu_world[exp].shape[0],i], '--', color="b", label="imu unshifted")
-                    ax.plot(self.tx[exp], self.imu_world[exp][:,i], color="c", label="imu shifted")
-                    ax.plot(self.tx[exp], self.ddx_u[exp][:,i],  color="r", label="estimated ddx")
+                
+                fig.suptitle(f'Avg. delay of ddx wrt. control: {np.round(delay_s*1000)}ms ({total_shift} shifts)')
+                for i, ax in enumerate(axs):               
+                    ax.plot(self.tx[exp], self.ddx_u[exp][:,i], color="c", label="ddx_u shifted")
+                    ax.plot(self.tx[exp], ddx_u_unshifted[exp][:self.ddx_u[exp].shape[0],i], '--', color="b", label="ddx_u unshifted")
+                    ax.plot(self.tx[exp], self.ddx[exp][:,i],  color="r", label="ddx")
+                    ax.plot(self.tx[exp], ddx_unshifted[exp][:self.ddx_u[exp].shape[0],i], '--', color="g", label="ddx unshifted")
                     ax.legend()
-                    ax.set_title(f"Dimension {i}")
+                    error = (1/self.ddx_u[exp].shape[0]) * np.sum(np.abs(self.ddx_u[exp][:,i]-self.ddx[exp][:,i]))
+                    unshifted_error = (1/self.ddx_u[exp].shape[0]) * np.sum(np.abs(ddx_u_unshifted[exp][:self.ddx_u[exp].shape[0],i]-self.ddx[exp][:,i]))
+                    ax.set_title(f"Dimension {i}, mean error: {np.round(error,3)}, unshifted error: {np.round(unshifted_error,3)}")
                 plt.show()
 
 
     def calcCrossCorr(self, sig_a_dict, sig_b_dict):
+        """
+        Calc. cross-correlation and determine time shift between signal a and b
+        If signal a is delayed with respect to signal b, then shift is positive.
+        Args:
+            sig_a_dict: dict of experiments containing signal a measurements
+            sig_b_dict: dict of experiments containing signal b measurements
+        Returns:
+            avg_shift: average shift (nb. indices shifted) over all dimensions and experiments
+            std_shift: std. of all shifts
+            mean_cc_max: average cross-correlation for shift over all dimensions and experiments
+        """
         sig_a_dict = sig_a_dict.copy()
         sig_b_dict = sig_b_dict.copy()
 
         shifts = []
         cc_maxs = []
         for exp in sig_a_dict:
-            for i in range(2):
+            for i in range(3):
                 sig_b = sig_b_dict[exp][:,i]
                 sig_a = sig_a_dict[exp][:,i]
-                # ddx = np.array( [0,1,2,3,4,0,0,0,0])
-                # imu = np.array( [0,0,0,1,2,3,4,0,0])
+                # sig_b = np.array( [0,1,2,3,4,0,0,0,0])
+                # sig_a = np.array( [0,0,0,1,2,3,4,0,0])
 
                 cc = signal.correlate(sig_a, sig_b, mode="full")       
                 cc_argmax = np.argmax(cc)
-                cc_maxs = cc[cc_argmax]
+                cc_maxs.append(cc[cc_argmax])
 
                 shift_arr = np.arange(-len(sig_a) + 1, len(sig_b))        
                 shift = shift_arr[cc_argmax]
@@ -562,7 +603,8 @@ class Preprocess():
                 self.x[exp] = self.x[exp][shift:,:]
                 self.dx[exp] = self.dx[exp][shift:,:]
                 self.ddx[exp] = self.ddx[exp][shift:,:]
-                self.imu_world[exp] = self.imu_world[exp][shift:,:]
+                if exp in self.imu_world:
+                    self.imu_world[exp] = self.imu_world[exp][shift:,:]
                 self.imu_body[exp] = self.imu_body[exp][shift:,:]
             elif shift < 0: 
                 self.u[exp] = self.u[exp][-shift:,:]
@@ -570,7 +612,8 @@ class Preprocess():
                 self.x[exp] = self.x[exp][:shift,:]
                 self.dx[exp] = self.dx[exp][:shift,:]
                 self.ddx[exp] = self.ddx[exp][:shift,:]
-                self.imu_world[exp] = self.imu_world[exp][:shift,:]
+                if exp in self.imu_world:
+                    self.imu_world[exp] = self.imu_world[exp][:shift,:]
                 self.imu_body[exp] = self.imu_body[exp][:shift,:]
 
     def integrate(self, dX, tX, X0):
@@ -609,14 +652,16 @@ class Preprocess():
         rot_mat[:,2,2] = np.ones(theta.shape[0])
         return rot_mat
 
-    def calcDDX_U(self, x_dict, u_dict, plot=False):
+    def calcDDX_U(self, x_dict, dx_dict, u_dict, plot=False):
         x_dict = x_dict.copy()
+        dx_dict = dx_dict.copy()
         u_dict = u_dict.copy()
         
         ddx_u = {}
         for exp in self.x:
-            
-            X = torch.tensor(x_dict[exp], dtype=torch.float32)
+            X1 = torch.tensor(x_dict[exp], dtype=torch.float32)
+            X2 = torch.tensor(dx_dict[exp], dtype=torch.float32)
+            X = torch.concat([X1, X2], axis=1)
             U = torch.tensor(u_dict[exp], dtype=torch.float32)
             U = self.sys.polyExpandU(U)
 
@@ -625,7 +670,7 @@ class Preprocess():
 
             if plot:
                 fig, axs = plt.subplots(nrows=4, ncols=1, figsize =(8, 8)) 
-                plot_range = 250  
+                plot_range = ddx_u[exp].shape[0]
 
                 for j in range(0,6):
                     axs[0].plot(self.tx[exp][:plot_range], u_dict[exp][:plot_range,j], label=f"signal {j}")
@@ -634,7 +679,7 @@ class Preprocess():
                 for i in range(1,4):
                     axs[i].plot(self.tx[exp][:plot_range], ddx_u[exp][:plot_range,i-1], color="y", label="ddx estimated")
                     axs[i].plot(self.tx[exp][:plot_range], self.ddx[exp][:plot_range,i-1],  color="r", label="ddx")
-                    axs[i].plot(self.tx[exp][:plot_range], self.imu_world[exp][:plot_range,i-1],  color="c", label="imu world")
+                    #axs[i].plot(self.tx[exp][:plot_range], self.imu_world[exp][:plot_range,i-1],  color="c", label="imu world")
                     axs[i].legend()
                     axs[i].set_title(f"Dimension {i-1}")
                 plt.show()
@@ -642,7 +687,7 @@ class Preprocess():
         return ddx_u     
 
     def smoothDDX_U(self, plot=False):
-        ddx_u = self.calcDDX_U(x_dict=self.x, u_dict=self.u, plot=False)
+        ddx_u = self.calcDDX_U(x_dict=self.x, dx_dict=self.dx, u_dict=self.u, plot=False)
 
         for exp in self.x:
             ddx_u_smooth = signal.savgol_filter(ddx_u[exp], window_length=55, polyorder=3, axis=0)    
@@ -659,21 +704,21 @@ class Preprocess():
                 plt.show()
 
 def main():
-    pp = Preprocess(series="signal_20221206")
+    pp = Preprocess(series="holohover_20221208")
     pp.loadData(crop_data=None, crop_exp=None)
     pp.stamp2seconds()
     pp.cropData(plot=False)
     pp.intermolateU(plot=False)
-    pp.intermolateIMU(plot=False)
+    # pp.intermolateIMU(plot=False)
+    pp.approxU(plot=False)
     pp.diffPosition(plot=False)
 
     # pp.imuRemoveOffset(plot=False)
     # pp.imuShift(plot=False)
 
-    # pp.uShift(plot=False)
+    pp.uShift(plot=True)
     # # pp.smoothDDX_U(plot=True)
-
-    # ddx_u = pp.calcDDX_U(x_dict=pp.x, u_dict=pp.u, plot=True)
+    # ddx_u = pp.calcDDX_U(x_dict=pp.x, dx_dict=pp.dx, u_dict=pp.u, plot=True)
 
     pp.saveData()
 

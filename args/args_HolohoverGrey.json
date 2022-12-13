@@ -2,7 +2,7 @@
     "data":
     {
         "load_data": true,
-        "series": "holohover_20221130"
+        "series": "holohover_20221208"
     },
     "black_model":
     {
@@ -13,19 +13,19 @@
     {
         "learn_center_of_mass": false,
         "learn_inertia": false,
-        "learn_signal2thrust": false,
+        "learn_signal2thrust": true,
         "poly_expand_U": 3
     },
     "learn":
     {
         "load_model": false,
         "model_path": false,
-        "learning_rate": 0.000001,
-        "nb_epochs": 1,
+        "learning_rate": 0.00001,
+        "nb_epochs": 20,
         "nb_batches": 80,
         "batch_size": 8192,
         "testing_share": 0.1,
         "regularize_center_of_mass": false,
-        "regularize_inertia": false
+        "regularize_inertia": true
     }
 }

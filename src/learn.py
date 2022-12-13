@@ -33,11 +33,16 @@ class Learn():
         self.batch_size = args.batch_size
         self.testing_share = args.testing_share
         self.device = dev
+        self.lossCoeff = np.zeros((system.M))
                                       
         self.sys = system
         self.model = model
         self.model.to(self.device)
-        self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.learning_rate)
+        # model_params = self.model.parameters()
+        model_params = [{'params':lin_fct.weight} for lin_fct in self.model.tnn_thr2sig_fcts]
+        model_params.append( {'params': self.model.center_of_mass} )
+        model_params.append( {'params': self.model.inertia, 'lr': 1e-7} )
+        self.optimizer = torch.optim.SGD(model_params, lr=self.learning_rate)
 
         # logging data
         self.losses_tr = []
@@ -58,8 +63,14 @@ class Learn():
 
         # get data and split it into training and testing sets
         X_data, U_data, dX_data = self.sys.getData()
+        self.calcLossCoeff(dX_data)
         # print(f"shape X_data: {X_data.shape}, U_data: {U_data.shape}, dX_data: {dX_data.shape}")
         X_tr, X_te, U_tr, U_te, dX_tr, dX_te = self.splitData(X_data, U_data, dX_data)
+
+        # evaluate testing set before training
+        with torch.no_grad():
+            dX_X = self.model.forward(X_te, U_te)
+            print(f"Epoch 0: \ttesting loss = {self.lossFunction(dX_X, dX_te).detach().clone().float()}")
         
         for j in range(self.nb_epochs):
             start_time = time.time()
@@ -70,25 +81,26 @@ class Learn():
                 # forward pass through models
                 dX_X = self.model.forward(X, U) # (N,D)
                 
-                print(f"U min: {torch.min(U)}, U max: {torch.max(U)}")
+                # print(f"U min: {torch.min(U)}, U max: {torch.max(U)}")
                 # print(f"shape X: {X.shape}, U: {U.shape}, dX: {dX_X.shape}, dX_real: {dX_real.shape}")          
 
                 # calc. loss
                 loss = self.lossFunction(dX_X, dX_real)
                 loss_tr.append(loss.detach().clone().float())
 
-                print(f"batch loss: {loss.detach().clone().float()}") 
-                print(f"mean error: {np.mean(np.power((dX_X-dX_real).detach().numpy(), 2), axis=0)}")
+                # print(f"batch loss: {loss.detach().clone().float()}") 
+                # print(f"mean error: {(torch.mean(torch.square(dX_X-dX_real), axis=0) / self.lossCoeff).detach().numpy()}")
 
-                plt.plot(dX_X[:,4].detach().numpy(), label="ddx")
-                plt.plot(dX_real[:,4].detach().numpy(), label="ddx real")
-                plt.legend()
-                plt.show()
+                # plt.plot(dX_X[:,4].detach().numpy(), label="ddx")
+                # plt.plot(dX_real[:,4].detach().numpy(), label="ddx real")
+                # plt.legend()
+                # plt.show()
 
                 # backwards pass through models
-                self.optimizer.zero_grad()
-                loss.backward()
-                self.optimizer.step()
+                if self.args.learn_center_of_mass or self.args.learn_inertia or self.args.learn_signal2thrust:
+                    self.optimizer.zero_grad()
+                    loss.backward()
+                    self.optimizer.step()
 
                 # print(f"trainting loss = {loss}")
 
@@ -102,11 +114,14 @@ class Learn():
 
             # print results
             end_time =time.time()
-            print(f"Epoch {j}: \telapse time = {np.round(end_time-start_time,3)}, \ttesting loss = {self.losses_te[-1]}, \ttraining loss = {self.losses_tr[-1]}")
+            print(f"Epoch {j+1}: \telapse time = {np.round(end_time-start_time,3)}, \ttesting loss = {self.losses_te[-1]}, \ttraining loss = {self.losses_tr[-1]}")
 
         print(f"Center of mass: {self.model.center_of_mass}, Center of mass init.: {self.model.init_center_of_mass}\n")
-        print(f"Inertia: {self.model.inertia}, Inertia init.: {self.model.init_inertia}\n")
+        print(f"Inertia: {np.round(self.model.inertia[0].detach().numpy(),6)}, Inertia init.: {np.round(self.model.init_inertia[0].detach().numpy(),6)}\n")
         print(f"Signal2thrust weights: {self.model.tnn_sig2thr_fcts[0].weight}, init. {self.model.init_signal2thrust[0]}\n")
+
+    def calcLossCoeff(self, dX):
+        self.lossCoeff = torch.std(torch.pow(dX, 2), axis=0)
 
     def lossFunction(self, dX_X, dX_real):
         """
@@ -115,13 +130,16 @@ class Learn():
         In dX_real: real system dynamics (b x n)
         Out L: average loss of batch X (scalar)
         """
-        mse = (1/dX_X.shape[0]) * torch.sum(torch.square(dX_X-dX_real))
+        mse = torch.sum( torch.mean(torch.square(dX_X-dX_real), axis=0) / self.lossCoeff )
+        # print(f"com: {self.model.center_of_mass}")
 
         if self.args.regularize_center_of_mass:
             mse += torch.linalg.norm(self.model.center_of_mass-self.model.init_center_of_mass)**2
 
         if self.args.regularize_inertia:
-            mse += (self.model.inertia-self.model.init_inertia)**2
+            # print(f"inertia: {self.model.inertia[0]}")
+            mse += 0.001*torch.abs(self.model.inertia[0]-self.model.init_inertia[0]) / self.model.init_inertia[0]
+
 
         return mse
 

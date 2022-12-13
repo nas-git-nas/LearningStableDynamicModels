@@ -80,7 +80,7 @@ class HolohoverModelGrey(ModelGrey):
         # signal2thrust mapping
         tnn_input_size = args.poly_expand_U
         tnn_output_size = 1
-        self.tnn_sig2thr_fcts = [nn.Linear(tnn_input_size, tnn_output_size, bias=False, dtype=torch.float32) for _ in range(self.M)]
+        self.tnn_sig2thr_fcts = nn.ModuleList([nn.Linear(tnn_input_size, tnn_output_size, bias=False, dtype=torch.float32) for _ in range(self.M)])
 
         for i, lin_fct in enumerate(self.tnn_sig2thr_fcts):
             lin_fct.weight = torch.nn.parameter.Parameter(self.init_signal2thrust[i,:].detach().clone().reshape(1, args.poly_expand_U))
@@ -92,7 +92,7 @@ class HolohoverModelGrey(ModelGrey):
         # thrust2signal mapping
         tnn_input_size = args.poly_expand_U
         tnn_output_size = 1
-        self.tnn_thr2sig_fcts = [nn.Linear(tnn_input_size, tnn_output_size, bias=False, dtype=torch.float32) for _ in range(self.M)]
+        self.tnn_thr2sig_fcts = nn.ModuleList([nn.Linear(tnn_input_size, tnn_output_size, bias=False, dtype=torch.float32) for _ in range(self.M)])
 
         for i, lin_fct in enumerate(self.tnn_thr2sig_fcts):
             lin_fct.weight = torch.nn.parameter.Parameter(self.init_thrust2signal[i,:].detach().clone().reshape(1, args.poly_expand_U))
