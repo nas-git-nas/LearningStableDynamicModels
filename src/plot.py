@@ -26,66 +26,36 @@ class Plot():
         xmin = self.sys.x_min - (self.sys.x_max-self.sys.x_min)/4
         xmax = self.sys.x_max + (self.sys.x_max-self.sys.x_min)/4
 
-        fig, axs = plt.subplots(nrows=2, ncols=2, figsize =(10, 18))
+        fig, axs = plt.subplots(nrows=2, ncols=2, figsize =(10, 8))
 
         self.modelLoss(axs[0,0])
         self.modelLoss(axs[0,1], log_scale=True)
+        self.modelAcc(axs[1,0], axs[1,1], log_scale=True)
 
-        plt.show()
-        # plt.savefig(os.path.join(self.learn.model_dir, self.learn.model_name + "_figure"))   
+        # plt.show()
+        plt.savefig(os.path.join(self.learn.model_dir, self.learn.model_name + "_figure"))   
 
 
-    # def greyAcc(self, ax1, ax2, dim, u_error_proc=0.2):
+    def modelAcc(self, ax1, ax2, log_scale=False):
+        abs_error = np.array(self.learn.abs_error_te)
 
-    #     X, U, dX = self.sys.getData(u_map=True)
+        ax1.set_title(f"Abs. error")
+        ax1.set_xlabel('nb. batches')
+        ax1.set_ylabel('Abs. error')
+        ax1.plot(abs_error[:,3], label="dd x")
+        ax1.plot(abs_error[:,4], "--", label="dd y")
+        ax1.legend()
 
-    #     X = X.cpu().numpy()
-    #     dX = dX.cpu().numpy()
-    #     U = U.cpu().numpy()
+        ax2.set_title(f"Abs. error")
+        ax2.set_xlabel('nb. batches')
+        ax2.set_ylabel('Abs. error')
+        ax2.plot(abs_error[:,5], label="dd theta")
+        ax2.legend()
 
-    #     u_max = np.max(U, axis=0)
-    #     u_min = np.min(U, axis=0)
-    #     u_error = (u_max-u_min)*u_error_proc
+        if log_scale:
+            ax1.set_yscale("log")
 
-    #     U_lin = np.zeros((int(1/u_error_proc), self.sys.M))
-    #     U_lin[:,dim] = np.linspace(u_min[dim], u_max[dim], int(1/u_error_proc))
 
-    #     dX_real = np.empty((U_lin.shape[0], self.sys.D)) * np.nan
-    #     dX_learn = np.empty((U_lin.shape[0], self.sys.D)) * np.nan
-    #     for j in range(U_lin.shape[0]):
-    #         Udes = U_lin[j,:]
-    #         # choose samples that have Udes +- u_error (error margin)
-    #         indices = np.ones(X.shape[0], dtype=bool)
-    #         for i in range(self.sys.M):
-    #             indices = indices & ((Udes[i]-u_error[i])<U[:,i]) & (U[:,i]<(Udes[i]+u_error[i]))
-    #         X_samp = X[np.where(indices)]
-    #         U_samp = U[np.where(indices)]
-    #         dX_real[j,:] = np.mean(dX[np.where(indices)], axis=0)
-            
-
-    #         # calc. learned system dynamics
-    #         with torch.no_grad():
-    #             dX_samp_learn = self.model.forward(torch.tensor(X_samp), torch.tensor(U_samp))
-    #         dX_learn[j,:] = torch.mean(dX_samp_learn, axis=0)
-
-    #     # dX_real = dX_real[~np.isnan(dX_real).any(axis=1)]
-    #     # dX_learn = dX_learn[~np.isnan(dX_learn).any(axis=1)]
-        
-    #     ax1.set_title(f'Real x acceleration)')
-    #     ax1.set_xlabel(f'U[{dim}]')
-    #     ax1.set_ylabel(f'acceleration')
-    #     ax1.plot(U_lin[:,dim], dX_real[:,3], label="ddx")
-    #     ax1.plot(U_lin[:,dim], dX_real[:,4], label="ddy")
-    #     ax1.plot(U_lin[:,dim], dX_real[:,5], label="ddtheta")
-    #     ax1.legend()
-
-    #     ax2.set_title('Learned x acceleration)')
-    #     ax2.set_xlabel(f'U[{dim}]')
-    #     ax2.set_ylabel(f'acceleration')
-    #     ax2.plot(U_lin[:,dim], dX_learn[:,3], label="ddx")
-    #     ax2.plot(U_lin[:,dim], dX_learn[:,4], label="ddy")
-    #     ax2.plot(U_lin[:,dim], dX_learn[:,5], label="ddtheta")
-    #     ax2.legend()
            
 
     def fakeModel(self, u_eq):

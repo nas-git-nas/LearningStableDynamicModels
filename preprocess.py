@@ -134,6 +134,7 @@ class Preprocess():
         X = np.empty((0,self.D))
         dX = np.empty((0,self.D))
         U = np.empty((0,self.M))
+        tX = np.empty((0))
         for exp in self.tx:
             Xnew = np.concatenate((self.x[exp], self.dx[exp]), axis=1)
             dXnew = np.concatenate((self.dx[exp], self.ddx[exp]), axis=1)
@@ -141,10 +142,12 @@ class Preprocess():
             X = np.concatenate((X, Xnew), axis=0)
             dX = np.concatenate((dX, dXnew), axis=0)
             U = np.concatenate((U, self.u[exp]), axis=0)
+            tX = np.concatenate((tX, self.tx[exp]), axis=0)
 
         np.savetxt(os.path.join("experiment", self.series, "data_state.csv"), X, delimiter=",")
         np.savetxt(os.path.join("experiment", self.series, "data_dynamics.csv"), dX, delimiter=",")
         np.savetxt(os.path.join("experiment", self.series, "data_input.csv"), U, delimiter=",")
+        np.savetxt(os.path.join("experiment", self.series, "data_time.csv"), tX, delimiter=",")
     
     def stamp2seconds(self):
         """¨
@@ -704,25 +707,34 @@ class Preprocess():
                 plt.show()
 
 def main():
-    pp = Preprocess(series="holohover_20221208")
-    pp.loadData(crop_data=None, crop_exp=None)
+    # pp = Preprocess(series="holohover_20221208")
+    # pp.loadData(crop_data=None, crop_exp=None)
+    # pp.stamp2seconds()
+    # pp.cropData(plot=False)
+    # pp.intermolateU(plot=False)
+    # # pp.intermolateIMU(plot=False)
+    # pp.approxU(plot=False)
+    # pp.diffPosition(plot=False)
+
+    # # pp.imuRemoveOffset(plot=False)
+    # # pp.imuShift(plot=False)
+
+    # pp.uShift(plot=True)
+    # # # pp.smoothDDX_U(plot=True)
+    # # ddx_u = pp.calcDDX_U(x_dict=pp.x, dx_dict=pp.dx, u_dict=pp.u, plot=True)
+
+    # pp.saveData()
+
+
+    pp = Preprocess(series="validation_20221208")
+    pp.loadData(crop_data=None, crop_exp=1)
     pp.stamp2seconds()
     pp.cropData(plot=False)
     pp.intermolateU(plot=False)
-    # pp.intermolateIMU(plot=False)
     pp.approxU(plot=False)
     pp.diffPosition(plot=False)
-
-    # pp.imuRemoveOffset(plot=False)
-    # pp.imuShift(plot=False)
-
-    pp.uShift(plot=True)
-    # # pp.smoothDDX_U(plot=True)
-    # ddx_u = pp.calcDDX_U(x_dict=pp.x, dx_dict=pp.dx, u_dict=pp.u, plot=True)
-
+    pp.uShift(plot=False)
     pp.saveData()
-
-    
 
 
 if __name__ == "__main__":

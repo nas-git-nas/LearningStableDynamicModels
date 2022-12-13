@@ -1,3 +1,4 @@
+import os
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
@@ -20,14 +21,17 @@ class Simulation():
         self.slack_coeff = 1000
 
     def simGrey(self):
-        nb_steps = 1200
-        periode = 0.01
+        series = "validation_20221208"
         
-        X, U_seq, dX_seq = self.sys.getData(u_map=True)
+        X = np.genfromtxt(os.path.join("experiment", series, "data_state.csv"), delimiter=",")
+        U = np.genfromtxt(os.path.join("experiment", series, "data_input.csv"), delimiter=",")
+        dX = np.genfromtxt(os.path.join("experiment", series, "data_dynamics.csv"), delimiter=",")
+        tX = np.genfromtxt(os.path.join("experiment", series, "data_time.csv"), delimiter=",")
 
-        Xreal_seq = self.simRealSys(nb_steps, periode, X[0,:], dX_seq)
-        Xlearn_seq, _, _, _ = self.simLearnedSys(   nb_steps, periode, X[0,:].detach().numpy(), 
-                                                    U_seq.detach().numpy(), self.model.forward)
+        nb_steps = tX.shape[0] - 1
+        Xreal_seq = X
+        Upoly = self.sys.polyExpandU(U=torch.tensor(U)).detach().numpy()
+        Xlearn_seq, _, _, _ = self.simLearnedSys(nb_steps=nb_steps, tX=tX, X0=X[0,:], Udes_seq=Upoly, dX_fct=self.model.forward)
         
         return Xreal_seq, Xlearn_seq
 
@@ -48,16 +52,17 @@ class Simulation():
 
         return X_seq
     
-    def simLearnedSys(self, nb_steps, periode, X0, Udes_seq, dX_fct, safety_filter=False):
+    def simLearnedSys(self, nb_steps, X0, Udes_seq, dX_fct, safety_filter=False, periode=None, tX=None):
         """
         Simulate system with a given control input sequence
         Args:
             nb_steps: number of simulation steps
-            periode: simulation periode
             X0: starting state at time step 0, numpy array (D)
             Udes_seq: sequence of desired control inputs, numpy array (nb_steps,M)
             dX_fct: function to calc. derivative of X, function with args (X, U)
             safety_filter: if True safety filter is active
+            periode: simulation periode
+            tX: time sequence of control inputs, will be used instead of periode
         Returns:
             X_seq: resulting state sequence (nb_steps+1,D)
             Usafe_seq: resulting control input sequence (nb_steps,M)
@@ -65,7 +70,7 @@ class Simulation():
         """
         X_seq = np.zeros((nb_steps+1, self.sys.D))
         X_seq[0,:] = X0
-        Usafe_seq = np.zeros((nb_steps, self.sys.M))
+        Usafe_seq = np.zeros((nb_steps, Udes_seq.shape[1]))
         slack_seq = np.zeros((nb_steps))
         V_seq = np.zeros((nb_steps))
 
@@ -78,10 +83,13 @@ class Simulation():
                 Usafe = Udes_seq[i,:]
                 slack = 0
                 V = 0
+
+            # calc. periode if time sequence is provided
+            periode = tX[i+1] - tX[i]
             
             # update state with system dynamicys
-            dX = dX_fct(torch.tensor(X).reshape(1,self.sys.D), 
-                        torch.tensor(Usafe).reshape(1,self.sys.M))
+            dX = dX_fct(torch.tensor(X).float().reshape(1,self.sys.D), 
+                        torch.tensor(Usafe).float().reshape(1,len(Usafe)))
             X = X + periode*dX.detach().numpy()
 
             # append results

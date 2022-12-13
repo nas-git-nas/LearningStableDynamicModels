@@ -14,7 +14,9 @@ def main():
         dev = "cuda:0" 
     else:  
         dev = "cpu"
-    device = torch.device(dev) 
+    device = torch.device(dev)
+
+    torch.manual_seed(0)
 
     args = Args(model_type="HolohoverGrey")
 
@@ -65,9 +67,9 @@ def main():
     plot.greyModel(ueq)
 
     # simulate system
-    # sim = Simulation(sys, model)
-    # Xreal_seq, Xlearn_seq = sim.simGrey()
-    # plot.simGrey(Xreal_seq, Xlearn_seq)
+    sim = Simulation(sys, model)
+    Xreal_seq, Xlearn_seq = sim.simGrey()
+    plot.simGrey(Xreal_seq, Xlearn_seq)
     
 
 if __name__ == "__main__":

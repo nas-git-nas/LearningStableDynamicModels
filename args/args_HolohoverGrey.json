@@ -11,8 +11,8 @@
     },
     "grey_model":
     {
-        "learn_center_of_mass": false,
-        "learn_inertia": false,
+        "learn_center_of_mass": true,
+        "learn_inertia": true,
         "learn_signal2thrust": true,
         "poly_expand_U": 3
     },
@@ -20,8 +20,8 @@
     {
         "load_model": false,
         "model_path": false,
-        "learning_rate": 0.00001,
-        "nb_epochs": 20,
+        "learning_rate": 0.0001,
+        "nb_epochs": 15,
         "nb_batches": 80,
         "batch_size": 8192,
         "testing_share": 0.1,

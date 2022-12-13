@@ -38,15 +38,20 @@ class Learn():
         self.sys = system
         self.model = model
         self.model.to(self.device)
+
+        # choose a different learning rates for params
         # model_params = self.model.parameters()
-        model_params = [{'params':lin_fct.weight} for lin_fct in self.model.tnn_thr2sig_fcts]
-        model_params.append( {'params': self.model.center_of_mass} )
-        model_params.append( {'params': self.model.inertia, 'lr': 1e-7} )
-        self.optimizer = torch.optim.SGD(model_params, lr=self.learning_rate)
+        model_params = [ { 'params':self.model.tnn_sig2thr_fcts[i].weight, 'lr':1e-4 } 
+                            for i in range(len(self.model.tnn_sig2thr_fcts))]
+        model_params.append( {'params': self.model.center_of_mass, 'lr':1e-6 } )
+        model_params.append( {'params': self.model.inertia, 'lr': 1e-7 } )
+        # self.optimizer = torch.optim.SGD(model_params, lr=self.learning_rate)
+        self.optimizer = torch.optim.Adam(model_params, lr=self.learning_rate)
 
         # logging data
         self.losses_tr = []
         self.losses_te = []
+        self.abs_error_te = []
 
 
 
@@ -68,9 +73,7 @@ class Learn():
         X_tr, X_te, U_tr, U_te, dX_tr, dX_te = self.splitData(X_data, U_data, dX_data)
 
         # evaluate testing set before training
-        with torch.no_grad():
-            dX_X = self.model.forward(X_te, U_te)
-            print(f"Epoch 0: \ttesting loss = {self.lossFunction(dX_X, dX_te).detach().clone().float()}")
+        self.evaluate(X_te=X_te, dX_te=dX_te, U_te=U_te)
         
         for j in range(self.nb_epochs):
             start_time = time.time()
@@ -108,9 +111,7 @@ class Learn():
             self.losses_tr.append(np.mean(loss_tr))
 
             # evaluate testing set
-            with torch.no_grad():
-                dX_X = self.model.forward(X_te, U_te)
-                self.losses_te.append(self.lossFunction(dX_X, dX_te).detach().clone().float())
+            self.evaluate(X_te=X_te, dX_te=dX_te, U_te=U_te)
 
             # print results
             end_time =time.time()
@@ -143,6 +144,20 @@ class Learn():
 
         return mse
 
+    def evaluate(self, X_te, dX_te, U_te):
+        """
+        Evaluation step: calc. loss and abs. error on testing set
+        Args:
+            X_te: testing set state, tensor (N_te,D)
+            dX_te: testing set dynamics, tensor (N_te,D)
+            U_te: testing set control input, tensor (N_te,M)
+        """
+        with torch.no_grad():
+            dX_X = self.model.forward(X_te, U_te)
+
+        self.losses_te.append(self.lossFunction(dX_X, dX_te).detach().clone().float())
+        self.abs_error_te.append(torch.mean(torch.abs(dX_X - dX_te), axis=0).detach().numpy())
+
     def splitData(self, X, U, dX):
         """
         Get data from system class and split into training and testing sets
@@ -163,10 +178,10 @@ class Learn():
         dX = dX.clone().detach()
 
         # randomize order
-        # rand_order = torch.randperm(X.shape[0])
-        # X = X[rand_order,:]
-        # U = U[rand_order,:]
-        # dX = dX[rand_order,:]
+        rand_order = torch.randperm(X.shape[0])
+        X = X[rand_order,:]
+        U = U[rand_order,:]
+        dX = dX[rand_order,:]
 
         # split into training and testing sets
         split_idx = int((1-self.testing_share)*X.shape[0])
