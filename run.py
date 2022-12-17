@@ -25,7 +25,7 @@ def main():
     args = Args(model_type="HolohoverGrey")
     params = Params(args=args)
 
-    # save model
+    # create directory
     t = datetime.now()
     dir_name = t.strftime("%Y%m%d") + "_" + t.strftime("%H%M")
     args.dir_path = os.path.join("models", args.model_type, dir_name)
@@ -70,26 +70,35 @@ def main():
     if args.load_model:
         model.load_state_dict(torch.load(args.model_path))
 
+    # init. base learner
+    if args.model_type == "HolohoverGrey":
+        ld = LearnGreyModel(args=args, dev=device, system=sys, model=model)
+    else:
+        ld = None
 
-    # learn dynamics
-    ld = LearnGreyModel(args=args, dev=device, system=sys, model=model)
-    ld.optimize()
-    ld.saveModel()
+    # init. correction learner
+    if args.learn_correction:
+        lc = LearnCorrection(args=args, dev=dev, system=sys, model=cor_model, base_model=model)
+    else:
+        lc = None
 
-    # learn model correction
-    lc = LearnCorrection(args=args, dev=dev, system=sys, model=cor_model, base_model=model)
-    lc.optimize()
+    # learn dynamics 
+    ld.optimize()  
+    if args.learn_correction:
+        lc.optimize()
 
     # plot results
-    plot = Plot(args=args, dev=device, model=model, cor_model=cor_model, system=sys, learn=ld, learn_cor=lc)
+    plot = Plot(args=args, params=params, dev=device, model=model, cor_model=cor_model, system=sys, learn=ld, learn_cor=lc)
     plot.greyModel(ueq)
-    plot.corModel()
+    if args.learn_correction:
+        plot.corModel()
 
     # # simulate system
     # sim = Simulation(sys, model)
     # Xreal_seq, Xreal_integ_seq, Xlearn_seq = sim.simGrey()
     # plot.simGrey(Xreal_seq, Xreal_integ_seq, Xlearn_seq)
 
+    ld.saveModel()
     args.save()
     params.save(model)
     

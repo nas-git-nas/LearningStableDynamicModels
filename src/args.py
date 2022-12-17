@@ -32,9 +32,19 @@ class Args():
             self.learn_motors_vec = args["grey_model"]["learn_motors_vec"]
             self.learn_motors_pos = args["grey_model"]["learn_motors_pos"]
             self.poly_expand_U = args["grey_model"]["poly_expand_U"]
+            self.lr_center_of_mass = args["grey_model"]["lr_center_of_mass"]
+            self.lr_inertia = args["grey_model"]["lr_inertia"]
+            self.lr_mass = args["grey_model"]["lr_mass"]
+            self.lr_signal2thrust = args["grey_model"]["lr_signal2thrust"]
+            self.lr_motors_vec = args["grey_model"]["lr_motors_vec"]
+            self.lr_motors_pos = args["grey_model"]["lr_motors_pos"]
         else:
             self.grey_model = False
-            self.poly_expand_U = False       
+            self.poly_expand_U = False
+
+        self.learn_correction = args["cor_model"]["learn_correction"]
+        if self.learn_correction:
+            self.lr_cor = args["cor_model"]["lr_cor"]
   
         self.load_model = args["learn"]["load_model"]
         self.model_path = args["learn"]["model_path"]

@@ -17,14 +17,25 @@
         "learn_signal2thrust": true,
         "learn_motors_vec": true,
         "learn_motors_pos": true,
-        "poly_expand_U": 3
+        "poly_expand_U": 3,
+        "lr_center_of_mass": 1e-6,
+        "lr_inertia": 1e-7,
+        "lr_mass":1e-5,
+        "lr_signal2thrust": 1e-4,
+        "lr_motors_vec": 1e-5,
+        "lr_motors_pos": 1e-5
+    },
+    "cor_model":
+    {
+        "learn_correction": true,
+        "lr_cor": 0.01
     },
     "learn":
     {
         "load_model": false,
         "model_path": "models/HolohoverGrey/20221217_0929_trainAll500/20221217_0929_model",
         "learning_rate": 0.0001,
-        "nb_epochs": 50,
+        "nb_epochs": 500,
         "nb_batches": 80,
         "batch_size": 8192,
         "testing_share": 0.1,

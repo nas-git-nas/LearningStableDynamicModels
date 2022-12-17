@@ -116,11 +116,13 @@ class Learn():
     def optimize(self):
         X_tr, X_te, U_tr, U_te, dX_tr, dX_te = self.getData()
 
-        self.evaluate(X_te=X_te, dX_te=dX_te, U_te=U_te)
-
         self.losses_tr = []
         self.losses_te = []
         self.abs_error_te = []
+        self.evaluate(X_te=X_te, dX_te=dX_te, U_te=U_te)
+        self.losses_tr.append(self.losses_te[0])
+        print(f"Epoch 0: \ttesting loss = {self.losses_te[-1]}, \ttraining loss = {self.losses_tr[-1]}")
+
         for j in range(self.args.nb_epochs):
             start_time = time.time()
 
@@ -159,13 +161,13 @@ class LearnGreyModel(Learn):
     def __init__(self, args, dev, system, model):
         Learn.__init__(self, args=args, dev=dev, system=system, model=model)
 
-        model_params = [ { 'params':self.model.sig2thr_fcts[i].weight, 'lr':1e-4 } 
+        model_params = [ { 'params':self.model.sig2thr_fcts[i].weight, 'lr':args.lr_signal2thrust } 
                             for i in range(len(self.model.sig2thr_fcts))]
-        model_params.append( {'params': self.model.center_of_mass, 'lr':1e-6 } )
-        model_params.append( {'params': self.model.mass, 'lr':1e-5 } )
-        model_params.append( {'params': self.model.inertia, 'lr': 1e-7 } )
-        model_params.append( {'params': self.model.motors_vec, 'lr': 1e-5 } )
-        model_params.append( {'params': self.model.motors_pos, 'lr': 1e-5 } )
+        model_params.append( {'params': self.model.center_of_mass, 'lr':args.lr_center_of_mass } )
+        model_params.append( {'params': self.model.mass, 'lr':args.lr_mass } )
+        model_params.append( {'params': self.model.inertia, 'lr':args.lr_inertia } )
+        model_params.append( {'params': self.model.motors_vec, 'lr':args.lr_motors_vec } )
+        model_params.append( {'params': self.model.motors_pos, 'lr':args.lr_motors_pos } )
         self.optimizer = torch.optim.Adam(model_params, lr=self.args.learning_rate)
 
     def forward(self, X, U):
@@ -218,7 +220,7 @@ class LearnCorrection(Learn):
         Learn.__init__(self, args=args, dev=dev, system=system, model=model)
 
         self.base_model = base_model
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=0.01)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=args.lr_cor)
 
     def forward(self, X, U):
         with torch.no_grad():

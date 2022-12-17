@@ -47,27 +47,6 @@ class HolohoverModelGrey(ModelGrey):
     def __init__(self, args, params, dev):
         ModelGrey.__init__(self, dev)
 
-        # holohover params
-        # self.init_mass = torch.tensor([0.0983]) # mass of holohover
-        # self.motor_distance = 0.046532 # distance form center (0,0,0) in robot frame to motors
-        # self.motor_angle_offset = 0.0 # offset angle of first motor pair (angle between motor 1 and motor 2)
-        # self.motor_angel_delta = 0.328220 # angle between center of motor pair and motors to the left and right
-
-        # self.init_inertia = torch.tensor([0.0003599]) # intitial inertia
-        # self.init_signal2thrust = torch.tensor([[-0.04016251167742002, 1.3078587931596721, -0.6501016606674075], # initial signal2thrust coeff.
-        #                                         [0.026828422632851595, 1.050842947701885, -0.43371886420836747], # tensor (M, poly_expand_U)
-        #                                         [0.06897398735413296, 0.9734173280950021, -0.4314325561246988], # for each motor [a1, a2, a3]
-        #                                         [0.1131439882582147, 0.9019586934278533, -0.3806616655050825], # where thrust = a1*u + a2*u^2 + a3*u^3
-        #                                         [-0.018477980448020626, 1.2944916719119886, -0.6295276270648476],
-        #                                         [0.12654605007354636, 0.9252123806815016, -0.3851267274962138] ])
-        # self.init_thrust2signal = torch.tensor([[3.670891277300514, -7.429134286715521, 6.702733687265958], # initial thrust2signal coeff.
-        #                                         [3.5811056803023287, -6.733585457837144, 5.632697369602757], # tensor (M, poly_expand_U)
-        #                                         [3.420726977700959, -6.122320230844099, 5.269938003461095], # for each motor [a1, a2, a3]
-        #                                         [3.253410608693488, -5.540061780108178, 4.609935267050166], # where u = a1*thrust + a2*thrust^2 + a3*thrust^3
-        #                                         [3.3975162033911075, -6.228152068818256, 5.227163481857802],
-        #                                         [3.110909518731778, -5.105006415353796, 4.0882551539271965] ])
-  
-
         # Center of mass
         self.center_of_mass = torch.nn.parameter.Parameter(torch.tensor(params.center_of_mass))
         if args.learn_center_of_mass:

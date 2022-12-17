@@ -4,9 +4,12 @@ import torch
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
+from src.model_grey import HolohoverModelGrey, CorrectModelGrey
+
 class Plot():
-    def __init__(self, args, dev, model, cor_model, system, learn, learn_cor) -> None:
+    def __init__(self, args, params, dev, model, cor_model, system, learn, learn_cor) -> None:
         self.args = args
+        self.params = params
         self.model = model
         self.cor_model = cor_model
         self.sys = system
@@ -29,43 +32,91 @@ class Plot():
         xmin = self.sys.x_min - (self.sys.x_max-self.sys.x_min)/4
         xmax = self.sys.x_max + (self.sys.x_max-self.sys.x_min)/4
 
-        fig, axs = plt.subplots(nrows=2, ncols=2, figsize =(10, 8))
+        fig, axs = plt.subplots(nrows=3, ncols=2, figsize =(10, 10))
 
         self.modelLoss(axs[0,0], losses_tr=self.learn.losses_tr, losses_te=self.learn.losses_te)
-        self.modelAcc(axs[1,0], axs[1,1], abs_error_te=self.learn.abs_error_te, log_scale=True)
+        self.modelError((axs[1,0], axs[2,0]), abs_error_te=self.learn.abs_error_te)
+        self.modelData((axs[0,1],axs[1,1],axs[2,1]), plot_range=(0,600), plot_white=True)
 
-        # plt.show()
         plt.savefig(os.path.join(self.args.dir_path, "learn_model")) 
 
     def corModel(self, u_eq=False):
 
-        fig, axs = plt.subplots(nrows=2, ncols=2, figsize =(10, 8))
+        fig, axs = plt.subplots(nrows=3, ncols=2, figsize =(10, 10))
 
         self.modelLoss(axs[0,0], losses_tr=self.learn_cor.losses_tr, losses_te=self.learn_cor.losses_te)
-        self.modelAcc(axs[1,0], axs[1,1], abs_error_te=self.learn_cor.abs_error_te, log_scale=True)
+        self.modelError((axs[1,0], axs[2,0]), abs_error_te=self.learn_cor.abs_error_te)
+        self.modelData((axs[0,1],axs[1,1],axs[2,1]), plot_range=(0,600), plot_cor=True)
 
-        # plt.show()
         plt.savefig(os.path.join(self.args.dir_path, "learn_correction"))   
 
 
-    def modelAcc(self, ax1, ax2, abs_error_te, log_scale=False):
+    def modelData(self, axs, plot_range, plot_cor=False, plot_white=False):
+        X_data, U_data, dX_data = self.sys.getData()
+        X = X_data[plot_range[0]:plot_range[1],:]
+        U = U_data[plot_range[0]:plot_range[1],:]
+        dX_real = dX_data[plot_range[0]:plot_range[1],:]
+
+        with torch.no_grad():
+            dX_model = self.learn.forward(X, U)
+
+            if plot_cor:
+               dX_cor = self.learn_cor.forward(X, U)
+
+            if plot_white:
+                white_model = HolohoverModelGrey(args=self.args, params=self.params, dev="cpu")
+                dX_white = white_model.forward(X=X, U=U)
+
+        axs[0].set_title(f"Finale dd(x)")
+        axs[0].set_ylabel('[m/s^2]')
+        axs[0].plot(dX_real[:,3], label="real", color="black")
+        if plot_white:
+            axs[0].plot(dX_white[:,3], label="white box", color="blue")
+            axs[0].plot(dX_model[:,3], "--", label="grey box", color="cyan")
+        if plot_cor:
+            axs[0].plot(dX_model[:,3], label="grey box", color="cyan")
+            axs[0].plot(dX_cor[:,3], "--", label="grey box corr.", color="orange")
+        axs[0].legend()
+
+        axs[1].set_title(f"Finale dd(y)")
+        axs[1].set_ylabel('[m/s^2]')
+        axs[1].plot(dX_real[:,4], label="real", color="black")
+        if plot_white:
+            axs[1].plot(dX_white[:,4], label="white box", color="blue")
+            axs[1].plot(dX_model[:,4], "--", label="grey box", color="cyan")
+        if plot_cor:
+            axs[1].plot(dX_model[:,4], label="grey box", color="cyan")
+            axs[1].plot(dX_cor[:,4], "--", label="grey box corr.", color="orange")
+        axs[1].legend()
+
+        axs[2].set_title(f"Finale dd(theta)")
+        axs[2].set_xlabel('time [s]')
+        axs[2].set_ylabel('[rad/s^2]')
+        axs[2].plot(dX_real[:,5], label="real", color="black")
+        if plot_white:
+            axs[2].plot(dX_white[:,5], label="white box", color="blue")
+            axs[2].plot(dX_model[:,5], "--", label="grey box", color="cyan")
+        if plot_cor:
+            axs[2].plot(dX_model[:,5], label="grey box", color="cyan")
+            axs[2].plot(dX_cor[:,5], "--", label="grey box corr.", color="orange")
+        axs[2].legend()
+
+
+
+    def modelError(self, axs, abs_error_te):
         abs_error = np.array(abs_error_te)
 
-        ax1.set_title(f"Abs. error")
-        ax1.set_xlabel('nb. batches')
-        ax1.set_ylabel('Abs. error')
-        ax1.plot(abs_error[:,3], label="dd x")
-        ax1.plot(abs_error[:,4], "--", label="dd y")
-        ax1.legend()
+        axs[0].set_title(f"Mean absolute error")
+        axs[0].set_ylabel('[m/s^2]')
+        axs[0].plot(abs_error[:,3], label="dd(x)", color="red")
+        axs[0].plot(abs_error[:,4], "--", label="dd(y)", color="red")
+        axs[0].legend()
 
-        ax2.set_title(f"Abs. error")
-        ax2.set_xlabel('nb. batches')
-        ax2.set_ylabel('Abs. error')
-        ax2.plot(abs_error[:,5], label="dd theta")
-        ax2.legend()
-
-        if log_scale:
-            ax1.set_yscale("log")
+        axs[1].set_title(f"Mean absolute error")
+        axs[1].set_xlabel('epochs')
+        axs[1].set_ylabel('[rad/s^2]')
+        axs[1].plot(abs_error[:,5], label="dd(theta)", color="red")
+        axs[1].legend()
 
 
            
@@ -97,10 +148,9 @@ class Plot():
 
     def modelLoss(self, axis, losses_tr, losses_te, log_scale=False):     
         axis.set_title(f"Loss")
-        axis.set_xlabel('epochs')
         axis.set_ylabel('loss')
-        axis.plot(losses_tr, label="training loss")
-        axis.plot(losses_te, label="testing loss")
+        axis.plot(losses_te, label="testing", color="purple")
+        axis.plot(losses_tr, "--", label="training", color="purple")
         axis.legend()
 
         if log_scale:
