@@ -9,6 +9,7 @@ class Args():
             args = json.load(f)
 
         self.model_type = model_type
+        self.dir_path = None
 
         self.load_data = args["data"]["load_data"]
         self.series = args["data"]["series"]
@@ -25,8 +26,11 @@ class Args():
         if model_type == "HolohoverGrey" or model_type == "Signal2Thrust":
             self.grey_model = True
             self.learn_center_of_mass = args["grey_model"]["learn_center_of_mass"]
+            self.learn_mass = args["grey_model"]["learn_mass"]
             self.learn_inertia = args["grey_model"]["learn_inertia"]
             self.learn_signal2thrust = args["grey_model"]["learn_signal2thrust"]
+            self.learn_motors_vec = args["grey_model"]["learn_motors_vec"]
+            self.learn_motors_pos = args["grey_model"]["learn_motors_pos"]
             self.poly_expand_U = args["grey_model"]["poly_expand_U"]
         else:
             self.grey_model = False
@@ -41,4 +45,44 @@ class Args():
         self.testing_share = args["learn"]["testing_share"]
         self.regularize_center_of_mass = args["learn"]["regularize_center_of_mass"]
         self.regularize_inertia = args["learn"]["regularize_inertia"]
+
+    def save(self):
+        args = {}
+        args["data"] = {
+            "load_data": self.load_data,
+            "series": self.series
+        }
+        if self.model_type == "DHO" or self.model_type == "CSTR" or self.model_type == "HolohoverBlack":
+            args["black_model"] = {
+                "controlled_system": self.controlled_system,
+                "lyapunov_correction": self.lyapunov_correction
+            }
+        if self.model_type == "HolohoverGrey" or self.model_type == "Signal2Thrust":
+            args["grey_model"] = {
+                "learn_center_of_mass": self.learn_center_of_mass,
+                "learn_inertia": self.learn_inertia,
+                "learn_mass":self.learn_mass,
+                "learn_signal2thrust": self.learn_signal2thrust,
+                "learn_motors_vec": self.learn_motors_vec,
+                "learn_motors_pos": self.learn_motors_pos,
+                "poly_expand_U": self.poly_expand_U
+            }
+        args["learn"] = {
+            "load_model": self.load_model,
+            "model_path": self.model_path,
+            "learning_rate": self.learning_rate,
+            "nb_epochs": self.nb_epochs,
+            "nb_batches": self.nb_batches,
+            "batch_size": self.batch_size,
+            "testing_share": self.testing_share,
+            "regularize_center_of_mass": self.regularize_center_of_mass,
+            "regularize_inertia": self.regularize_inertia
+        }
+        
+        # Serializing json
+        json_object = json.dumps(args, indent=4)
+        
+        # Writing to sample.json
+        with open(os.path.join(self.dir_path, "args_"+self.model_type+".json"), "w") as outfile:
+            outfile.write(json_object)
 

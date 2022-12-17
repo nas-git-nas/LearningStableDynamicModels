@@ -32,20 +32,25 @@ class Simulation():
         Xreal_seq = X
         Upoly = self.sys.polyExpandU(U=torch.tensor(U)).detach().numpy()
         Xlearn_seq, _, _, _ = self.simLearnedSys(nb_steps=nb_steps, tX=tX, X0=X[0,:], Udes_seq=Upoly, dX_fct=self.model.forward)
+        Xreal_integ_seq = self.simRealSys(nb_steps=nb_steps, tX=tX, X0=X[0,:], dX_seq=dX)
         
-        return Xreal_seq, Xlearn_seq
+        return Xreal_seq, Xreal_integ_seq, Xlearn_seq
 
 
-    def simRealSys(self, nb_steps, periode, X0, dX_seq): 
+    def simRealSys(self, nb_steps, X0, dX_seq, periode=None, tX=None): 
 
         X_seq = np.zeros((nb_steps+1, self.sys.D))
         X_seq[0,:] = X0
 
         X = X0
-        for i in range(nb_steps):           
+        for i in range(nb_steps):
+            # calc. periode if time sequence is provided
+            if len(tX) > 0:
+                periode = tX[i+1] - tX[i]
+                   
             # update state with system dynamicys
             dX = dX_seq[i,:]
-            X = X + periode*dX.detach().numpy()
+            X = X + periode*dX
 
             # append results
             X_seq[i+1,:] = X
@@ -85,12 +90,14 @@ class Simulation():
                 V = 0
 
             # calc. periode if time sequence is provided
-            periode = tX[i+1] - tX[i]
+            if len(tX) > 0:
+                periode = tX[i+1] - tX[i]
             
             # update state with system dynamicys
             dX = dX_fct(torch.tensor(X).float().reshape(1,self.sys.D), 
                         torch.tensor(Usafe).float().reshape(1,len(Usafe)))
-            X = X + periode*dX.detach().numpy()
+            dX = dX.detach().numpy().flatten()
+            X = X + periode*dX
 
             # append results
             X_seq[i+1,:] = X

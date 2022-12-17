@@ -5,17 +5,20 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
 class Plot():
-    def __init__(self, dev, model, system, learn=None) -> None:
+    def __init__(self, args, dev, model, cor_model, system, learn, learn_cor) -> None:
+        self.args = args
         self.model = model
+        self.cor_model = cor_model
         self.sys = system
         self.learn = learn
+        self.learn_cor = learn_cor
         self.device = dev
 
-        if self.learn.model_type == "DHO":
+        if args.model_type == "DHO":
             self.quiver_scale = 50.0
-        elif self.learn.model_type == "CSTR":
+        elif args.model_type == "CSTR":
             self.quiver_scale = 0.8
-        elif self.learn.model_type == "HolohoverGrey":
+        elif args.model_type == "HolohoverGrey":
             self.quiver_scale = 1
 
     def greyModel(self, u_eq):
@@ -28,16 +31,25 @@ class Plot():
 
         fig, axs = plt.subplots(nrows=2, ncols=2, figsize =(10, 8))
 
-        self.modelLoss(axs[0,0])
-        self.modelLoss(axs[0,1], log_scale=True)
-        self.modelAcc(axs[1,0], axs[1,1], log_scale=True)
+        self.modelLoss(axs[0,0], losses_tr=self.learn.losses_tr, losses_te=self.learn.losses_te)
+        self.modelAcc(axs[1,0], axs[1,1], abs_error_te=self.learn.abs_error_te, log_scale=True)
 
         # plt.show()
-        plt.savefig(os.path.join(self.learn.model_dir, self.learn.model_name + "_figure"))   
+        plt.savefig(os.path.join(self.args.dir_path, "learn_model")) 
+
+    def corModel(self, u_eq=False):
+
+        fig, axs = plt.subplots(nrows=2, ncols=2, figsize =(10, 8))
+
+        self.modelLoss(axs[0,0], losses_tr=self.learn_cor.losses_tr, losses_te=self.learn_cor.losses_te)
+        self.modelAcc(axs[1,0], axs[1,1], abs_error_te=self.learn_cor.abs_error_te, log_scale=True)
+
+        # plt.show()
+        plt.savefig(os.path.join(self.args.dir_path, "learn_correction"))   
 
 
-    def modelAcc(self, ax1, ax2, log_scale=False):
-        abs_error = np.array(self.learn.abs_error_te)
+    def modelAcc(self, ax1, ax2, abs_error_te, log_scale=False):
+        abs_error = np.array(abs_error_te)
 
         ax1.set_title(f"Abs. error")
         ax1.set_xlabel('nb. batches')
@@ -83,12 +95,12 @@ class Plot():
 
         plt.savefig(os.path.join(self.learn.model_dir, self.learn.model_name + "_figure"))
 
-    def modelLoss(self, axis, log_scale=False):     
-        axis.set_title(f"Learning rate: {self.learn.learning_rate}, nb. epochs: {self.learn.nb_epochs}")
-        axis.set_xlabel('nb. batches')
+    def modelLoss(self, axis, losses_tr, losses_te, log_scale=False):     
+        axis.set_title(f"Loss")
+        axis.set_xlabel('epochs')
         axis.set_ylabel('loss')
-        axis.plot(self.learn.losses_tr, label="training loss")
-        axis.plot(self.learn.losses_te, label="testing loss")
+        axis.plot(losses_tr, label="training loss")
+        axis.plot(losses_te, label="testing loss")
         axis.legend()
 
         if log_scale:
@@ -238,26 +250,26 @@ class Plot():
 
         plt.show()
 
-    def simGrey(self, Xreal_seq, Xlearn_seq):
+    def simGrey(self, Xreal_seq, Xreal_integ_seq, Xlearn_seq):
         """
         Plot simulation
         Args:
             
         """
         nb_steps = Xreal_seq.shape[0]
-        xmin = np.minimum(np.min(Xreal_seq, axis=0), np.min(Xlearn_seq, axis=0))
-        xmax = np.maximum(np.max(Xreal_seq, axis=0), np.max(Xlearn_seq, axis=0))
+        xmin = np.minimum(np.min(Xreal_seq, axis=0), np.min(Xlearn_seq, axis=0), np.min(Xreal_integ_seq, axis=0))
+        xmax = np.maximum(np.max(Xreal_seq, axis=0), np.max(Xlearn_seq, axis=0), np.max(Xreal_integ_seq, axis=0))
         xmin -= (xmax-xmin)/6
         xmax += (xmax-xmin)/6
 
         fig, axs = plt.subplots(nrows=2, ncols=2, figsize =(9, 9))
 
-        self.modelLoss(axs[0,0])
-        self.modelLoss(axs[0,1], log_scale=True)               
-        self.simTrajectory(axs[1,0], Xreal_seq, nb_steps-1, xmin, xmax, title="Real trajectory")
+        self.modelLoss(axs[0,0])               
+        self.simTrajectory(axs[0,1], Xreal_seq, nb_steps-1, xmin, xmax, title="Real trajectory")
+        self.simTrajectory(axs[1,0], Xreal_integ_seq, nb_steps-1, xmin, xmax, title="Real integrated trajectory")
         self.simTrajectory(axs[1,1], Xlearn_seq, nb_steps-1, xmin, xmax, title="Learned trajectory")
 
-        plt.savefig(os.path.join(self.learn.model_dir, self.learn.model_name + "_figure"))
+        plt.savefig(os.path.join(self.learn.model_dir, self.learn.model_name + "_figure_sim"))
 
     def simTrajectory(self, axis, X_seq, nb_steps, xmin, xmax, title=False):
         """

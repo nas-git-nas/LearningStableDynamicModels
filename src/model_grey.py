@@ -10,6 +10,11 @@ class ModelGrey(nn.Module):
         super(ModelGrey, self).__init__()
 
         self.device = dev 
+
+        # system parameters
+        self.D = 6 # dim. of state x
+        self.M = 6 # dim. of controll input u   
+        self.S = 3 # dim. of space
  
         # activation fcts.
         self.relu = nn.ReLU()
@@ -17,9 +22,154 @@ class ModelGrey(nn.Module):
         self.sp = nn.Softplus() #softplus (smooth approx. of ReLU)
         self.tanh = nn.Tanh()
 
-    @abstractmethod
-    def signal2acc(self, U, X):
-        pass
+    def rotMatrix(self, theta):
+        """
+        Calc. 3D rotational matrix for batch
+        Args:
+            theta: rotation aroung z-axis in world frame, tensor (N)
+        Returns:
+            rot_mat: rotational matrix, tensor (N,S,S)
+        """
+        rot_mat = torch.zeros(theta.shape[0], self.S, self.S)
+        cos = torch.cos(theta) # (N)
+        sin = torch.sin(theta) # (N)
+        rot_mat[:,0,0] = cos
+        rot_mat[:,1,1] = cos
+        rot_mat[:,0,1] = -sin
+        rot_mat[:,1,0] = sin
+        rot_mat[:,2,2] = torch.ones(theta.shape[0])
+        return rot_mat
+
+
+
+
+class HolohoverModelGrey(ModelGrey):
+    def __init__(self, args, params, dev):
+        ModelGrey.__init__(self, dev)
+
+        # holohover params
+        # self.init_mass = torch.tensor([0.0983]) # mass of holohover
+        # self.motor_distance = 0.046532 # distance form center (0,0,0) in robot frame to motors
+        # self.motor_angle_offset = 0.0 # offset angle of first motor pair (angle between motor 1 and motor 2)
+        # self.motor_angel_delta = 0.328220 # angle between center of motor pair and motors to the left and right
+
+        # self.init_inertia = torch.tensor([0.0003599]) # intitial inertia
+        # self.init_signal2thrust = torch.tensor([[-0.04016251167742002, 1.3078587931596721, -0.6501016606674075], # initial signal2thrust coeff.
+        #                                         [0.026828422632851595, 1.050842947701885, -0.43371886420836747], # tensor (M, poly_expand_U)
+        #                                         [0.06897398735413296, 0.9734173280950021, -0.4314325561246988], # for each motor [a1, a2, a3]
+        #                                         [0.1131439882582147, 0.9019586934278533, -0.3806616655050825], # where thrust = a1*u + a2*u^2 + a3*u^3
+        #                                         [-0.018477980448020626, 1.2944916719119886, -0.6295276270648476],
+        #                                         [0.12654605007354636, 0.9252123806815016, -0.3851267274962138] ])
+        # self.init_thrust2signal = torch.tensor([[3.670891277300514, -7.429134286715521, 6.702733687265958], # initial thrust2signal coeff.
+        #                                         [3.5811056803023287, -6.733585457837144, 5.632697369602757], # tensor (M, poly_expand_U)
+        #                                         [3.420726977700959, -6.122320230844099, 5.269938003461095], # for each motor [a1, a2, a3]
+        #                                         [3.253410608693488, -5.540061780108178, 4.609935267050166], # where u = a1*thrust + a2*thrust^2 + a3*thrust^3
+        #                                         [3.3975162033911075, -6.228152068818256, 5.227163481857802],
+        #                                         [3.110909518731778, -5.105006415353796, 4.0882551539271965] ])
+  
+
+        # Center of mass
+        self.center_of_mass = torch.nn.parameter.Parameter(torch.tensor(params.center_of_mass))
+        if args.learn_center_of_mass:
+            self.center_of_mass.requires_grad = True
+        else:
+            self.center_of_mass.requires_grad = False
+
+        # mass
+        self.mass = torch.nn.parameter.Parameter(torch.tensor(params.mass))
+        if args.learn_mass:
+            self.mass.requires_grad = True
+        else:
+            self.mass.requires_grad = False
+
+        # Inertia around z axis
+        self.inertia = torch.nn.parameter.Parameter(torch.tensor(params.inertia))
+        if args.learn_inertia:
+            self.inertia.requires_grad = True
+        else:
+            self.inertia.requires_grad = False
+
+        
+        # unit vectors of thrust from motors
+        self.motors_vec = torch.nn.parameter.Parameter(self.initMotorVec(params).detach().clone())
+        if args.learn_motors_vec:
+            self.motors_vec.requires_grad = True
+        else:
+            self.motors_vec.requires_grad = False
+
+        # motor positions
+        self.motors_pos = torch.nn.parameter.Parameter(self.initMotorPos(params).detach().clone())
+        if args.learn_motors_pos:
+            self.motors_pos.requires_grad = True
+        else:
+            self.motors_pos.requires_grad = False
+
+        # if poly_expand_U < 3 or poly_expand_U > 3, then signal2thrust and thrust2signal must be cropped or extended resp. 
+        init_signal2thrust = torch.tensor(params.signal2thrust)
+        init_thrust2signal = torch.tensor(params.thrust2signal)                         
+        if args.poly_expand_U < 3: # desired polynomial expansion has smaller degree than measured coeff. -> ignore higher coeff.
+            init_signal2thrust = init_signal2thrust[:,:args.poly_expand_U]
+            init_thrust2signal = init_thrust2signal[:,:args.poly_expand_U]
+        elif args.poly_expand_U > 3: # desired polynomial expansion has larger degree than measured coeff. -> add coeff. = zero
+            padding = torch.zeros(self.M, args.poly_expand_U-3)
+            init_signal2thrust = torch.concat((init_signal2thrust, padding), axis=1)
+            init_thrust2signal = torch.concat((init_thrust2signal, padding), axis=1)
+
+        # signal2thrust mapping
+        input_size = args.poly_expand_U
+        output_size = 1
+        self.sig2thr_fcts = nn.ModuleList([nn.Linear(input_size, output_size, bias=False, dtype=torch.float32) for _ in range(self.M)])
+        for i, lin_fct in enumerate(self.sig2thr_fcts):
+            lin_fct.weight = torch.nn.parameter.Parameter(init_signal2thrust[i,:].detach().clone().reshape(1, args.poly_expand_U))
+            if args.learn_signal2thrust:
+                lin_fct.weight.requires_grad = True
+            else:
+                lin_fct.weight.requires_grad = False    
+
+        # thrust2signal mapping
+        input_size = args.poly_expand_U
+        output_size = 1
+        self.thr2sig_fcts = nn.ModuleList([nn.Linear(input_size, output_size, bias=False, dtype=torch.float32) for _ in range(self.M)])
+        for i, lin_fct in enumerate(self.thr2sig_fcts):
+            lin_fct.weight = torch.nn.parameter.Parameter(init_thrust2signal[i,:].detach().clone().reshape(1, args.poly_expand_U))
+            lin_fct.weight.requires_grad = False   
+
+    def initMotorPos(self, params):
+        """
+        Initiate motors position
+        Args:
+            params: parameters, Params class
+        Returns:
+            motors_pos: position of motors in robot frame, tensor (M,S)
+        """ 
+        motors_pos = torch.zeros(self.M, self.S)
+
+        for j in np.arange(0, self.M, step=2):
+            angle_motor_pair = params.motor_angle_offset  + j*np.pi/3
+            angle_first_motor = angle_motor_pair - params.motor_angel_delta
+            angle_second_motor = angle_motor_pair + params.motor_angel_delta
+
+            motors_pos[j,:] = params.motor_distance * torch.tensor([np.cos(angle_first_motor), np.sin(angle_first_motor), 0.0])
+            motors_pos[j+1,:] = params.motor_distance * torch.tensor([np.cos(angle_second_motor), np.sin(angle_second_motor), 0.0])
+
+        return motors_pos.detach().clone()
+
+    def initMotorVec(self, params):
+        """
+        Initiate motors vector
+        Args:
+            params: parameters, Params class
+        Returns:
+            motors_vec: unit vector pointing in direction of thrust from each motor, tensor (M,S)
+        """ 
+        motors_vec = torch.zeros(self.M, self.S)
+
+        for j in np.arange(0, self.M, step=2):
+            angle_motor_pair = params.motor_angle_offset  + j*np.pi/3
+            motors_vec[j,:] = torch.tensor([-np.sin(angle_motor_pair), np.cos(angle_motor_pair), 0.0])
+            motors_vec[j+1,:] = torch.tensor([np.sin(angle_motor_pair), -np.cos(angle_motor_pair), 0.0])
+
+        return motors_vec.detach().clone()
 
     def forward(self, X, U):
         """
@@ -36,104 +186,6 @@ class ModelGrey(nn.Module):
         dX_X = torch.concat((X[:,3:6], acc), axis=1)       
 
         return dX_X
-
-
-class HolohoverModelGrey(ModelGrey):
-    def __init__(self, args, dev):
-        ModelGrey.__init__(self, dev)
-
-        # system parameters
-        self.D = 6 # dim. of state x
-        self.M = 6 # dim. of controll input u   
-        self.S = 3 # dim. of space
-
-        # holohover params
-        self.mass = 0.0983 # mass of holohover
-        self.motor_distance = 0.046532 # distance form center (0,0,0) in robot frame to motors
-        self.motor_angle_offset = 0.0 # offset angle of first motor pair (angle between motor 1 and motor 2)
-        self.motor_angel_delta = 0.328220 # angle between center of motor pair and motors to the left and right
-        self.motors_vec, self.motors_pos = self.initMotorPosVec() # unit vectors of thrust from motors, motor positions
-        self.init_center_of_mass = torch.zeros(self.S) # initial center of mass
-        self.init_inertia = torch.tensor([0.0003599]) # intitial inertia
-        self.init_signal2thrust = torch.tensor([[-0.04016251167742002, 1.3078587931596721, -0.6501016606674075], # initial signal2thrust coeff.
-                                                [0.026828422632851595, 1.050842947701885, -0.43371886420836747], # tensor (M, poly_expand_U)
-                                                [0.06897398735413296, 0.9734173280950021, -0.4314325561246988], # for each motor [a1, a2, a3]
-                                                [0.1131439882582147, 0.9019586934278533, -0.3806616655050825], # where thrust = a1*u + a2*u^2 + a3*u^3
-                                                [-0.018477980448020626, 1.2944916719119886, -0.6295276270648476],
-                                                [0.12654605007354636, 0.9252123806815016, -0.3851267274962138] ])
-        self.init_thrust2signal = torch.tensor([[3.670891277300514, -7.429134286715521, 6.702733687265958], # initial thrust2signal coeff.
-                                                [3.5811056803023287, -6.733585457837144, 5.632697369602757], # tensor (M, poly_expand_U)
-                                                [3.420726977700959, -6.122320230844099, 5.269938003461095], # for each motor [a1, a2, a3]
-                                                [3.253410608693488, -5.540061780108178, 4.609935267050166], # where u = a1*thrust + a2*thrust^2 + a3*thrust^3
-                                                [3.3975162033911075, -6.228152068818256, 5.227163481857802],
-                                                [3.110909518731778, -5.105006415353796, 4.0882551539271965] ])
-
-        # we measured the signal2thrust coeff. of degree=3, 
-        # if a different polynomial expansion is desired the shape of init_signal2thrust must be adapted                           
-        if args.poly_expand_U < 3: # desired polynomial expansion has smaller degree than measured coeff. -> ignore higher coeff.
-            self.init_signal2thrust = self.init_signal2thrust[:,:args.poly_expand_U]
-        if args.poly_expand_U > 3: # desired polynomial expansion has larger degree than measured coeff. -> add coeff. = zero
-            padding = torch.zeros(self.M, args.poly_expand_U-3)
-            self.init_signal2thrust = torch.concat((self.init_signal2thrust, padding), axis=1)
-        
-
-        # signal2thrust mapping
-        tnn_input_size = args.poly_expand_U
-        tnn_output_size = 1
-        self.tnn_sig2thr_fcts = nn.ModuleList([nn.Linear(tnn_input_size, tnn_output_size, bias=False, dtype=torch.float32) for _ in range(self.M)])
-
-        for i, lin_fct in enumerate(self.tnn_sig2thr_fcts):
-            lin_fct.weight = torch.nn.parameter.Parameter(self.init_signal2thrust[i,:].detach().clone().reshape(1, args.poly_expand_U))
-            if args.learn_signal2thrust:
-                lin_fct.weight.requires_grad = True
-            else:
-                lin_fct.weight.requires_grad = False    
-
-        # thrust2signal mapping
-        tnn_input_size = args.poly_expand_U
-        tnn_output_size = 1
-        self.tnn_thr2sig_fcts = nn.ModuleList([nn.Linear(tnn_input_size, tnn_output_size, bias=False, dtype=torch.float32) for _ in range(self.M)])
-
-        for i, lin_fct in enumerate(self.tnn_thr2sig_fcts):
-            lin_fct.weight = torch.nn.parameter.Parameter(self.init_thrust2signal[i,:].detach().clone().reshape(1, args.poly_expand_U))
-            lin_fct.weight.requires_grad = False     
-
-        # Center of mass
-        self.center_of_mass = torch.nn.parameter.Parameter(self.init_center_of_mass.detach().clone())
-        if args.learn_center_of_mass:
-            self.center_of_mass.requires_grad = True
-        else:
-            self.center_of_mass.requires_grad = False
-
-        # Inertia around z axis
-        self.inertia = torch.nn.parameter.Parameter(self.init_inertia.detach().clone())
-        if args.learn_inertia:
-            self.inertia.requires_grad = True
-        else:
-            self.inertia.requires_grad = False
-
-    def initMotorPosVec(self):
-        """
-        Initiate motors vector and motors position
-        Returns:
-            motors_vec: unit vector pointing in direction of thrust from each motor, tensor (M,S)
-            motors_pos: position of motors in robot frame, tensor (M,S)
-        """
-        
-        motors_vec = torch.zeros(self.M, self.S)
-        motors_pos = torch.zeros(self.M, self.S)
-
-        for j in np.arange(0, self.M, step=2):
-            angle_motor_pair = self.motor_angle_offset  + j*np.pi/3
-            motors_vec[j,:] = torch.tensor([-np.sin(angle_motor_pair), np.cos(angle_motor_pair), 0.0])
-            motors_vec[j+1,:] = torch.tensor([np.sin(angle_motor_pair), -np.cos(angle_motor_pair), 0.0])
-
-            angle_first_motor = angle_motor_pair - self.motor_angel_delta
-            angle_second_motor = angle_motor_pair + self.motor_angel_delta
-            motors_pos[j,:] = self.motor_distance * torch.tensor([np.cos(angle_first_motor), np.sin(angle_first_motor), 0.0])
-            motors_pos[j+1,:] = self.motor_distance * torch.tensor([np.cos(angle_second_motor), np.sin(angle_second_motor), 0.0])
-
-        return motors_vec.detach().clone(), motors_pos.detach().clone()
 
 
     def signal2acc(self, U, X):
@@ -154,7 +206,7 @@ class HolohoverModelGrey(ModelGrey):
         deg = int(U.shape[1] / self.M) # degree of polynomial expansion
 
         thrust = torch.zeros((U.shape[0], self.M), dtype=torch.float32)
-        for i, lin_fct in enumerate(self.tnn_sig2thr_fcts):
+        for i, lin_fct in enumerate(self.sig2thr_fcts):
             thrust[:,i] = lin_fct(U[:,int(i*deg):int((i+1)*deg)]).flatten()
 
         return thrust
@@ -171,7 +223,7 @@ class HolohoverModelGrey(ModelGrey):
         deg = int(thrust.shape[1] / self.M) # degree of polynomial expansion
 
         U = torch.zeros((thrust.shape[0], self.M), dtype=torch.float32)
-        for i, lin_fct in enumerate(self.tnn_thr2sig_fcts):
+        for i, lin_fct in enumerate(self.thr2sig_fcts):
             U[:,i] = lin_fct(thrust[:,int(i*deg):int((i+1)*deg)]).flatten()
 
         return U
@@ -205,25 +257,48 @@ class HolohoverModelGrey(ModelGrey):
 
         return acc
 
-    def rotMatrix(self, theta):
-        """
-        Calc. 3D rotational matrix for batch
-        Args:
-            theta: rotation aroung z-axis in world frame, tensor (N)
-        Returns:
-            rot_mat: rotational matrix, tensor (N,S,S)
-        """
-        rot_mat = torch.zeros(theta.shape[0], self.S, self.S)
-        cos = torch.cos(theta) # (N)
-        sin = torch.sin(theta) # (N)
-        rot_mat[:,0,0] = cos
-        rot_mat[:,1,1] = cos
-        rot_mat[:,0,1] = -sin
-        rot_mat[:,1,0] = sin
-        rot_mat[:,2,2] = torch.ones(theta.shape[0])
-        return rot_mat
 
 
+class CorrectModelGrey(ModelGrey):
+    def __init__(self, args, dev):
+        ModelGrey.__init__(self, dev)
+
+        hidden_size = 64
+        nb_hidden_layers = 4
+
+        nnx_input_size = [self.M*args.poly_expand_U + 1]
+        nny_input_size = [self.M*args.poly_expand_U + 1]
+        nnt_input_size = [self.M*args.poly_expand_U]
+        nnx_input_size.extend([hidden_size]*nb_hidden_layers)
+        nny_input_size.extend([hidden_size]*nb_hidden_layers) 
+        nnt_input_size.extend([hidden_size]*nb_hidden_layers)
+
+        output_size = [hidden_size]*nb_hidden_layers
+        output_size.append(1)
+        
+
+        self.nnx_lin_fcts = nn.ModuleList([nn.Linear(input, output, bias=True, dtype=torch.float32) 
+                                            for (input, output) in zip(nnx_input_size,output_size)])
+        self.nny_lin_fcts = nn.ModuleList([nn.Linear(input, output, bias=True, dtype=torch.float32) 
+                                            for (input, output) in zip(nny_input_size,output_size)])
+        self.nnt_lin_fcts = nn.ModuleList([nn.Linear(input, output, bias=True, dtype=torch.float32) 
+                                            for (input, output) in zip(nnt_input_size,output_size)])
+
+    def forward(self, X, U):
+        acc = torch.zeros(X.shape[0],self.S)
+
+        acc[:,0] = self.forwardAcc(Y=torch.concat([U,X[:,2,np.newaxis]], axis=1), lin_fcts=self.nnx_lin_fcts)
+        acc[:,1] = self.forwardAcc(Y=torch.concat([U,X[:,2,np.newaxis]], axis=1), lin_fcts=self.nny_lin_fcts)
+        acc[:,2] = self.forwardAcc(Y=U, lin_fcts=self.nnt_lin_fcts)
+        
+        return acc
+
+    def forwardAcc(self, Y, lin_fcts):
+        for i, lin in enumerate(lin_fcts[0:-1]):
+            Y = lin(Y)
+            Y = self.tanh(Y)
+        
+        return lin_fcts[-1](Y).flatten()
 
 
 def main():

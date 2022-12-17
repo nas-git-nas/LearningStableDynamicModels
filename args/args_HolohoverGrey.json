@@ -13,19 +13,22 @@
     {
         "learn_center_of_mass": true,
         "learn_inertia": true,
+        "learn_mass":true,
         "learn_signal2thrust": true,
+        "learn_motors_vec": true,
+        "learn_motors_pos": true,
         "poly_expand_U": 3
     },
     "learn":
     {
         "load_model": false,
-        "model_path": false,
+        "model_path": "models/HolohoverGrey/20221217_0929_trainAll500/20221217_0929_model",
         "learning_rate": 0.0001,
-        "nb_epochs": 15,
+        "nb_epochs": 50,
         "nb_batches": 80,
         "batch_size": 8192,
         "testing_share": 0.1,
         "regularize_center_of_mass": false,
-        "regularize_inertia": true
+        "regularize_inertia": false
     }
 }
