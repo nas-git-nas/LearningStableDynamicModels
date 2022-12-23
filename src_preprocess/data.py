@@ -1,5 +1,5 @@
 import os
-import copy
+from copy import deepcopy
 import numpy as np
 
 
@@ -33,21 +33,21 @@ class Data():
         datas = []
         for name in names:
             if name == "x":
-                datas.append(self._x.copy())
+                datas.append(deepcopy(self._x)) 
             if name == "dx":
-                datas.append(self._dx.copy())
+                datas.append(deepcopy(self._dx))
             if name == "ddx":
-                datas.append(self._ddx.copy())
+                datas.append(deepcopy(self._ddx))
             if name == "tx":
-                datas.append(self._tx.copy())
+                datas.append(deepcopy(self._tx))
             if name == "u":
-                datas.append(self._u.copy())
+                datas.append(deepcopy(self._u))
             if name == "tu":
-                datas.append(self._tu.copy())
+                datas.append(deepcopy(self._tu))
             if name == "f":
-                datas.append(self._f.copy())
+                datas.append(deepcopy(self._f))
             if name == "tf":
-                datas.append(self._tf.copy())
+                datas.append(deepcopy(self._tf))
         return datas
 
     def set(self, names, datas):
@@ -59,21 +59,21 @@ class Data():
         """
         for name, data in zip(names, datas):
             if name == "x":
-                self._x = data.copy()
+                self._x = deepcopy(data)
             if name == "dx":
-                self._dx = data.copy()
+                self._dx = deepcopy(data)
             if name == "ddx":
-                self._ddx = data.copy()
+                self._ddx = deepcopy(data)
             if name == "tx":
-                self._tx = data.copy()
+                self._tx = deepcopy(data)
             if name == "u":
-                self._u = data.copy()
+                self._u = deepcopy(data)
             if name == "tu":
-                self._tu = data.copy()
+                self._tu = deepcopy(data)
             if name == "f":
-                self._f = data.copy()
+                self._f = deepcopy(data)
             if name == "tf":
-                self._tf = data.copy()
+                self._tf = deepcopy(data)
 
     def delete(self, names):
         """
@@ -178,9 +178,10 @@ class Data():
 
     def save(self, names):
         """
-        Save state and control input vectors in csv file
+        Save data defined by 'names' in csv files
             state: [x, y, theta, dx, dy, dtheta], (N, D)
             u: [u1, ..., u6], (N, M)
+            thrust: [Fx, Fy, Fz], (N, D)
         Args:
             names: list of objects to save, list of str
         """

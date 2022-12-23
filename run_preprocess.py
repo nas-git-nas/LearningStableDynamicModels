@@ -5,8 +5,41 @@ from src.params import Params
 from src.system import HolohoverSystem
 from src.model_grey import HolohoverModelGrey
 from src_preprocess.data import Data
-from src_preprocess.plot_holohover import PlotHolohover
+from src_preprocess.preprocess_loadcell import Loadcell
 from src_preprocess.preprocess_holohover import PreprocessHolohover
+from src_preprocess.plot_loadcell import PlotLoadcell
+from src_preprocess.plot_holohover import PlotHolohover
+
+
+
+def loadcell(device):
+    series_name = "signal_20221206"
+    crop_data = None
+    crop_exp = None
+
+    args = Args(model_type="HolohoverGrey")
+    params = Params(args=args)
+    sys = HolohoverSystem(args=args, dev=device)
+    model = HolohoverModelGrey(args=args, params=params, dev=device)
+
+    data = Data(series_name=series_name, crop_data=crop_data, crop_exp=crop_exp)
+    plot = PlotLoadcell(data=data)
+    pp = Loadcell(data=data, plot=plot, sys=sys, model=model)
+    pp.cropData()
+    pp.interpolateU(plot=False)
+    pp.locSig(trigger_delay=0.5, plot=True)
+
+    # s2t = Loadcell(series="signal_20221206")
+
+    # thrusts = s2t.getThrust(plot=False)
+    # s2t.approxSignal2Thrust(thrusts, plot=False, print_coeff=True)
+    # s2t.approxThrust2Signal(thrusts, plot=False, print_coeff=True)
+
+    # # s2t.intermolateForce(plot=True)
+    # # s2t.saveData()
+
+    # trans_up, trans_dw = s2t.motorTransition(plot=False, signal_space=False)
+    # s2t.plotTransTime(trans_up, trans_dw)
 
 def holohover(device):
     series_name = "holohover_20221208"
@@ -58,7 +91,9 @@ def main():
         dev = "cpu"
     device = torch.device(dev)
 
-    holohover(device=device)
+    loadcell(device)
+
+    # holohover(device=device)
 
     # validation(device=device)
 

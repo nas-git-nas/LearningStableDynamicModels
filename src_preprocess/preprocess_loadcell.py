@@ -1,126 +1,125 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy import stats, optimize, interpolate, signal
-import os
-import copy
+from copy import deepcopy
 import torch
 
-from preprocess import Preprocess
-from src.args import Args
-from src.model_grey import HolohoverModelGrey
-from src.system import HolohoverSystem
 
-def polyFct2(x, a1, a2):
-    return a1*x + a2*x*x
-
-def polyFct3(x, a1, a2, a3):
-    return a1*x + a2*(x**2) + a3*(x**3)
-
-def polyFct4(x, a1, a2, a3, a4):
-    return a1*x + a2*(x**2) + a3*(x**3) + a4*(x**4)
-
-def polyFct5(x, a1, a2, a3, a4, a5):
-    return a1*x + a2*(x**2) + a3*(x**3) + a4*(x**4) + a5*(x**5)
-
-def expRise(X, tau, delay):
-    """
-    First order model
-    Args:
-        X: (time, y_final)
-        tau: time const.
-        delay: delay
-    Returns:
-        y: value at time t
-    """
-    (t, y_final) = X
-    return np.maximum(0, y_final*(1 - np.exp(-(t - delay)/tau)))
-    #return np.sign(gain)*np.maximum(0, np.abs(gain)*(1 - np.exp(-(t - delay)/tau)))
-
-def expFall(X, tau, delay):
-    """
-    First order model
-    Args:
-        X: (time, y_init)
-        tau: time const.
-        delay: delay
-    Returns:
-        y: value at time t
-    """
-    (t, y_init) = X
-    return np.minimum(y_init, y_init*np.exp(-(t - delay)/tau))
+from src_preprocess.functions import polyFct2, polyFct3, polyFct4, polyFct5, expRise, expFall
 
 
-class Signal2Thrust():
-    def __init__(self, series) -> None:
-        self.series = series
+class Loadcell():
+    def __init__(self, data, plot, sys, model) -> None:
+        self.M = 6
+        self.idle_signal = 0.03
+        self.nb_sig_per_mot = 6
 
-        # load data and convert time stamps to seconds
-        pp = Preprocess(series=series)
-        pp.loadData()
-        pp.stamp2seconds()
+        self.data = data
+        self.plot = plot
+        self.sys = sys
+        self.model = model
 
-        # data
-        self.u = pp.u
-        self.tu = pp.tu
-        self.force = pp.force
-        self.tforce = pp.tforce
+        # dict for signals and motors
+        self.thrusts = {}
+        for i in range(self.M):
+            self.thrusts[i] = {}
 
-        if torch.cuda.is_available():  
-            dev = "cuda:0" 
-        else:  
-            dev = "cpu"
-        device = torch.device(dev) 
-        args = Args(model_type="HolohoverGrey")
-        self.model = HolohoverModelGrey(args=args, dev=device)
-        self.sys = HolohoverSystem(args=args, dev=device)
-
-    def saveData(self):
+    def cropData(self):
         """
-        Save state and control input vectors in csv file
-            thrust: [Fx, Fy, Fz], (N, D)
-            u: [u1, ..., u6], (N, M)
+        Crop force data such that min(tu)<min(tf) and max(tf)<max(tu)
+        This is necessary to interpolate the force afterwards
         """
-        force = np.empty((0,3))
-        U = np.empty((0,6))
-        for exp in self.tforce:
-            force = np.concatenate((force, self.force[exp]), axis=0)
-            U = np.concatenate((U, self.u[exp]), axis=0)
+        tu, f, tf = self.data.get(names=["tu", "f", "tf"])
 
-        np.savetxt(os.path.join("experiment", self.series, "data_force.csv"), force, delimiter=",")
-        np.savetxt(os.path.join("experiment", self.series, "data_input.csv"), U, delimiter=",")
+        for exp in self.data.exps:
 
-    def intermolateForce(self, plot=False):
+            while tf[exp][0] < tu[exp][0]:
+                tf[exp] = tf[exp][1:]
+                f[exp] = f[exp][1:]
+
+            while tf[exp][-1] > tu[exp][-1]:
+                tf[exp] = tf[exp][0:-1]
+                f[exp] = f[exp][0:-1]
+
+        self.data.set(names=["f", "tf"], datas=[f, tf])  
+
+    def interpolateU(self, plot=False):
         """
         Polynomial interpolation of u to match with force
+        Args:
+            plot: if True plot results
         """
-        for exp in self.u:
-            print(f"tu min: {self.tu[exp][0]}, tforce min: {self.tforce[exp][0]}")
-            print(f"tu max: {self.tu[exp][-1]}, tforce max: {self.tforce[exp][-1]}")
+        u, tu, tf = self.data.get(names=["u", "tu", "tf"])
 
+        u_inter = {}
+        for exp in self.data.exps:
 
-            while self.tforce[exp][0] < self.tu[exp][0]:
-                self.tforce[exp] = self.tforce[exp][1:]
-                self.force[exp] = self.force[exp][1:]
+            inter_fct = interpolate.interp1d(tu[exp], u[exp], axis=0)
+            u_inter[exp] = inter_fct(tf[exp])
 
-            while self.tforce[exp][-1] > self.tu[exp][-1]:
-                l = self.tforce[exp].shape[0]
-                self.tforce[exp] = self.tforce[exp][0:l-1]
-                self.force[exp] = self.force[exp][0:l-1]
+        if plot:
+            self.plot.interpolateU(u_inter)
 
-            inter_fct = interpolate.interp1d(self.tu[exp], self.u[exp], axis=0)
-            u_inter = inter_fct(self.tforce[exp])
+        self.data.set(names=["u"], datas=[u_inter])
+        self.data.delete(names=["tu"])
 
-            if plot:
-                fig, axs = plt.subplots(nrows=self.u[exp].shape[1], figsize =(8, 8))             
-                for i, ax in enumerate(axs):
-                    ax.plot(self.tu[exp], self.u[exp][:,i], color="b", label="u")
-                    ax.plot(self.tforce[exp], u_inter[:,i], '--', color="r", label="u inter.")
-                    ax.legend()
-                    ax.set_title(f"Control input {i}")
-                plt.show()
+    def locSig(self, trigger_delay=0.5, plot=False):
+        u, f, tf = self.data.get(names=["u", "f", "tf"])
+        u, f, tf = list(u.values())[0], list(f.values())[0], list(tf.values())[0]
 
-            self.u[exp] = u_inter
-            self.tu[exp] = [] # not used anymore
+        # init. previous state
+        prev_state = False
+        bg_in_front = True
+        if np.max(u[0,:]) > self.idle_signal:
+            prev_state = True
+            bg_in_front = False
+
+        tsig_start = trigger_delay
+        sgs = np.full((self.M,self.nb_sig_per_mot), fill_value={})
+        bgs = np.full((self.M,self.nb_sig_per_mot), fill_value={})
+        m = 0
+        s = 0
+        for i in range(len(tf)):
+            # determine state
+            state = False
+            if np.max(u[i,:]) > self.idle_signal:
+                state = True
+
+            # if state toggled or last element is reached, then calc. indices
+            if state is not prev_state or i==len(tf)-1:
+                assert tsig_start < tf[i]
+
+                if prev_state: # signal
+                    sgs[m,s]["start"] = np.argmax(tf>tsig_start)
+                    sgs[m,s]["stop"] = np.argmax(tf>=tf[i])
+                    sgs[m,s]["motor"] = np.argmax(u[i-1])
+                    sgs[m,s]["signal"] = np.max(u[i-1])
+                    if bg_in_front:
+                        if s < self.nb_sig_per_mot-1:
+                            s += 1
+                        else:
+                            s = 0
+                            m += 1
+                else: # background
+                    bgs[m,s]["start"] = np.argmax(tf>tsig_start)
+                    bgs[m,s]["stop"] = np.argmax(tf>=tf[i])
+                    if not bg_in_front:
+                        if s < self.nb_sig_per_mot-1:
+                            s += 1
+                        else:
+                            s = 0
+                            m += 1
+
+                tsig_start = tf[i] + trigger_delay
+                prev_state = state
+                if m == self.M:
+                    break
+        
+        if plot:
+            self.plot.locSig(sgs=sgs, bgs=bgs)
+
+        self.sgs = sgs
+        self.bgs = bgs
 
     def getThrust(self, trigger_delay=0.5, plot=False):
         """
@@ -136,153 +135,147 @@ class Signal2Thrust():
                             "bg":background when no force is applied (N,3), "norm":norm of force (N), "mean":mean of signal (1), 
                             "std":std of signal (1)
         """
-        force = copy.deepcopy(self.force)
-        tforce = copy.deepcopy(self.tforce)
-        u = copy.deepcopy(self.u)
-        tu = copy.deepcopy(self.tu)
+        u, tu, f, tf = self.data.get(names=["u", "tu", "f" "tf"])
+        u, tu, f, tf = list(u.keys())[0], list(tu.keys())[0], list(f.keys())[0], list(tf.keys())[0]
+        thrusts = deepcopy(thrusts)
 
-        # dict for signals and motors
-        thrusts = {}
-        for i in range(6):
-            thrusts[i] = {}
-
-
-        # loop through all experiments        
-        for exp in force:
-
-            signal_state_prev = False
-            signal_time_start = 0 
-            mot = 0
-            sig = 0
-            for i, (tui, ui) in enumerate(zip(tu[exp], u[exp])):
-                
-                # check if currently a signal is send
-                if np.sum(ui) > len(ui)*0.025:
-                    signal_state = True
-                else: 
-                    signal_state = False
-
-                # check if signal state toggled
-                if signal_state is not signal_state_prev or i==len(tu[exp])-1:
-                    # evaluate start and stop indices of signal
-                    assert signal_time_start < tui
-                    idx_start =  np.argmax(tforce[exp]>signal_time_start)
-                    idx_stop = np.argmax(tforce[exp]>=tui)
-
-                    # calc. signal mean and standard deviation
-                    if signal_state_prev:
-                        force_sig = force[exp][idx_start:idx_stop,:]
-                        time = tforce[exp][idx_start:idx_stop]
-                        mot = np.argmax(u[exp][i-1])
-                        sig = np.max(u[exp][i-1])
-                        thrusts[mot][sig] = {   "idx_start":idx_start, "idx_stop":idx_stop, "time":time, "force":force_sig, 
-                                                "bg":None, "bg_time":None, "norm":None, "mean":None, "std":None }
-                    else:
-                        if sig in thrusts[mot].keys():
-                            thrusts[mot][sig]["bg"] = force[exp][idx_start:idx_stop,:]
-                            thrusts[mot][sig]["bg_time"] = tforce[exp][idx_start:idx_stop]
-                    
-                    # set starting time of signal while removing 0.5s
-                    signal_time_start = tui + trigger_delay
-                
-                    # update previous state
-                    signal_state_prev = signal_state
-
-        for exp in force:
-            if plot:
-                fig, axs = plt.subplots(nrows=2, ncols=3, figsize =(16, 8)) 
-                axs[0,0].plot(tforce[exp], force[exp][:,0], color="b", label="Thrust x")
-                axs[0,1].plot(tforce[exp], force[exp][:,1], color="g", label="Thrust y")
-                axs[0,0].set_title(f"Thrust x")
-                axs[0,1].set_title(f"Thrust y")
-                axs[1,0].set_title(f"Thrust x (offset removed)")   
-                axs[1,1].set_title(f"Thrust y (offset removed)")
-                axs[1,2].set_title(f"Thrust norm (offset removed)")
-
-                offset_plot_x = []
-                offset_plot_y = []
-                offset_plot_t = []
-
-
-            for mot in thrusts:
-                for sig in thrusts[mot]:
-                    bg_x = thrusts[mot][sig]["bg"][:,0]
-                    bg_y = thrusts[mot][sig]["bg"][:,1]
-                    bg_idx = thrusts[mot][sig]["idx_stop"]
-                    
-                    # de-bias x and y quantities
-                    force_x = thrusts[mot][sig]["force"][:,0] - np.mean(bg_x)
-                    force_y = thrusts[mot][sig]["force"][:,1] - np.mean(bg_y)
-                    bg_x = bg_x - np.mean(bg_x)
-                    bg_y = bg_y - np.mean(bg_y)
-
-                    # calc. norm of forces
-                    force_norm = np.sqrt(np.power(force_x, 2) + np.power(force_y, 2))
-                    bg_norm = np.sqrt(np.power(bg_x, 2) + np.power(bg_y, 2))
-
-                    # de-bias norm
-                    force_norm = force_norm - np.mean(bg_norm)
-                    bg_norm = bg_norm - np.mean(bg_norm)
-
-                    thrusts[mot][sig]["norm"] = force_norm
-                    thrusts[mot][sig]["mean"] = np.mean(force_norm)
-                    thrusts[mot][sig]["std"] = np.std(force_norm)
+        signal_state_prev = False
+        signal_time_start = 0 
+        mot = 0
+        sig = 0
+        for i, (tui, ui) in enumerate(zip(tu, u)):
             
-                    if plot:
-                        offset_plot_x.append(np.mean(bg_x))
-                        offset_plot_y.append(np.mean(bg_y))
-                        offset_plot_t.append(tforce[exp][bg_idx])
-                        axs[1,0].plot(thrusts[mot][sig]["time"], force_x, color="b")                    
-                        axs[1,1].plot(thrusts[mot][sig]["time"], force_y, color="g")
-                        axs[1,2].plot(thrusts[mot][sig]["time"], thrusts[mot][sig]["norm"], color="m")
-            if plot:
-                axs[0,0].plot(offset_plot_t, offset_plot_x, color="r", label="Offset")
-                axs[0,1].plot(offset_plot_t, offset_plot_y, color="r", label="Offset")
-                axs[1,0].hlines(0, offset_plot_t[0], offset_plot_t[-1], color="r", label="Thrust x")
-                axs[1,1].hlines(0, offset_plot_t[0], offset_plot_t[-1], color="r", label="Thrust y")
-                axs[1,0].plot([], [], color="b", label="Thrust x")
-                axs[1,1].plot([], [], color="g", label="Thrust y")
-                axs[1,2].plot([], [], color="m", label="Thrust norm")
-                axs[0,0].set_xlabel("time [s]")
-                axs[0,0].set_ylabel("force [N]")
-                axs[0,1].set_xlabel("time [s]")
-                axs[0,1].set_ylabel("force [N]")
-                axs[1,0].set_xlabel("time [s]")
-                axs[1,0].set_ylabel("force [N]")
-                axs[1,1].set_xlabel("time [s]")
-                axs[1,1].set_ylabel("force [N]")
-                axs[1,2].set_xlabel("time [s]")
-                axs[1,2].set_ylabel("force [N]")
+            # check if currently a signal is send
+            if np.sum(ui) > len(ui)*self.idle_signal:
+                signal_state = True
+            else: 
+                signal_state = False
 
-                axs[0,0].legend()
-                axs[0,1].legend()
-                axs[1,0].legend()
-                axs[1,1].legend()
-                axs[1,2].legend()
-                fig.delaxes(axs[0,2])
-                plt.show()
-    
+            # check if signal state toggled
+            if signal_state is not signal_state_prev or i==len(tu)-1:
+                # evaluate start and stop indices of signal
+                assert signal_time_start < tui
+                idx_start =  np.argmax(tf>signal_time_start)
+                idx_stop = np.argmax(tf>=tui)
+
+                # calc. signal mean and standard deviation
+                if signal_state_prev:
+                    force_sig = f[idx_start:idx_stop,:]
+                    time = tf[idx_start:idx_stop]
+                    mot = np.argmax(u[i-1])
+                    sig = np.max(u[i-1])
+                    thrusts[mot][sig] = {   "idx_start":idx_start, "idx_stop":idx_stop, "time":time, "force":force_sig, 
+                                            "bg":None, "bg_time":None, "norm":None, "mean":None, "std":None }
+                else:
+                    if sig in thrusts[mot].keys():
+                        thrusts[mot][sig]["bg"] = f[idx_start:idx_stop,:]
+                        thrusts[mot][sig]["bg_time"] = tf[idx_start:idx_stop]
+                
+                # set starting time of signal while removing 0.5s
+                signal_time_start = tui + trigger_delay
+            
+                # update previous state
+                signal_state_prev = signal_state
+
+
         if plot:
-            for exp in force:
-                fig, axs = plt.subplots(nrows=2, ncols=3, figsize =(12, 8))             
-                for i, mot in enumerate(thrusts):
-                    k = int(i/len(axs[0]))
-                    l = i % len(axs[0])
+            fig, axs = plt.subplots(nrows=2, ncols=3, figsize =(16, 8)) 
+            axs[0,0].plot(tf, f[:,0], color="b", label="Thrust x")
+            axs[0,1].plot(tf, f[:,1], color="g", label="Thrust y")
+            axs[0,0].set_title(f"Thrust x")
+            axs[0,1].set_title(f"Thrust y")
+            axs[1,0].set_title(f"Thrust x (offset removed)")   
+            axs[1,1].set_title(f"Thrust y (offset removed)")
+            axs[1,2].set_title(f"Thrust norm (offset removed)")
 
-                    for sig in thrusts[mot]:
-                        axs[k,l].set_title(f"Motor {mot+1}")
-                        axs[k,l].scatter(sig, thrusts[mot][sig]["mean"], color="b")
-                        axs[k,l].errorbar(sig, thrusts[mot][sig]["mean"], thrusts[mot][sig]["std"], color="r", fmt='.k')
-                    axs[k,l].scatter([], [], color="b", label="Mean")
-                    axs[k,l].errorbar([], [], [], color="r", fmt='.k', label="Std.")
-                    axs[k,l].set_xlabel("signal")
-                    axs[k,l].set_ylabel("thrust [N]")
-                    axs[k,l].legend()
-                plt.show()
+            offset_plot_x = []
+            offset_plot_y = []
+            offset_plot_t = []
 
-        return thrusts
+
+        for mot in thrusts:
+            for sig in thrusts[mot]:
+                bg_x = thrusts[mot][sig]["bg"][:,0]
+                bg_y = thrusts[mot][sig]["bg"][:,1]
+                bg_idx = thrusts[mot][sig]["idx_stop"]
+                
+                # de-bias x and y quantities
+                force_x = thrusts[mot][sig]["force"][:,0] - np.mean(bg_x)
+                force_y = thrusts[mot][sig]["force"][:,1] - np.mean(bg_y)
+                bg_x = bg_x - np.mean(bg_x)
+                bg_y = bg_y - np.mean(bg_y)
+
+                # calc. norm of forces
+                force_norm = np.sqrt(np.power(force_x, 2) + np.power(force_y, 2))
+                bg_norm = np.sqrt(np.power(bg_x, 2) + np.power(bg_y, 2))
+
+                # de-bias norm
+                force_norm = force_norm - np.mean(bg_norm)
+                bg_norm = bg_norm - np.mean(bg_norm)
+
+                thrusts[mot][sig]["norm"] = force_norm
+                thrusts[mot][sig]["mean"] = np.mean(force_norm)
+                thrusts[mot][sig]["std"] = np.std(force_norm)
+        
+                if plot:
+                    offset_plot_x.append(np.mean(bg_x))
+                    offset_plot_y.append(np.mean(bg_y))
+                    offset_plot_t.append(tf[bg_idx])
+                    axs[1,0].plot(thrusts[mot][sig]["time"], force_x, color="b")                    
+                    axs[1,1].plot(thrusts[mot][sig]["time"], force_y, color="g")
+                    axs[1,2].plot(thrusts[mot][sig]["time"], thrusts[mot][sig]["norm"], color="m")
+        if plot:
+            axs[0,0].plot(offset_plot_t, offset_plot_x, color="r", label="Offset")
+            axs[0,1].plot(offset_plot_t, offset_plot_y, color="r", label="Offset")
+            axs[1,0].hlines(0, offset_plot_t[0], offset_plot_t[-1], color="r", label="Thrust x")
+            axs[1,1].hlines(0, offset_plot_t[0], offset_plot_t[-1], color="r", label="Thrust y")
+            axs[1,0].plot([], [], color="b", label="Thrust x")
+            axs[1,1].plot([], [], color="g", label="Thrust y")
+            axs[1,2].plot([], [], color="m", label="Thrust norm")
+            axs[0,0].set_xlabel("time [s]")
+            axs[0,0].set_ylabel("force [N]")
+            axs[0,1].set_xlabel("time [s]")
+            axs[0,1].set_ylabel("force [N]")
+            axs[1,0].set_xlabel("time [s]")
+            axs[1,0].set_ylabel("force [N]")
+            axs[1,1].set_xlabel("time [s]")
+            axs[1,1].set_ylabel("force [N]")
+            axs[1,2].set_xlabel("time [s]")
+            axs[1,2].set_ylabel("force [N]")
+
+            axs[0,0].legend()
+            axs[0,1].legend()
+            axs[1,0].legend()
+            axs[1,1].legend()
+            axs[1,2].legend()
+            fig.delaxes(axs[0,2])
+            plt.show()
+
+        if plot:
+
+            fig, axs = plt.subplots(nrows=2, ncols=3, figsize =(12, 8))             
+            for i, mot in enumerate(thrusts):
+                k = int(i/len(axs[0]))
+                l = i % len(axs[0])
+
+                for sig in thrusts[mot]:
+                    axs[k,l].set_title(f"Motor {mot+1}")
+                    axs[k,l].scatter(sig, thrusts[mot][sig]["mean"], color="b")
+                    axs[k,l].errorbar(sig, thrusts[mot][sig]["mean"], thrusts[mot][sig]["std"], color="r", fmt='.k')
+                axs[k,l].scatter([], [], color="b", label="Mean")
+                axs[k,l].errorbar([], [], [], color="r", fmt='.k', label="Std.")
+                axs[k,l].set_xlabel("signal")
+                axs[k,l].set_ylabel("thrust [N]")
+                axs[k,l].legend()
+            plt.show()
+
+        self.thrusts = deepcopy(thrusts)
 
     def approxSignal2Thrust(self, thrusts, plot=False, print_coeff=False):
+        """
+        Args:
+            plot: if True plot results
+        """
         
         for mot in thrusts:
             signal = []
@@ -368,6 +361,10 @@ class Signal2Thrust():
             plt.show()
 
     def approxThrust2Signal(self, thrusts, plot=False, print_coeff=False):
+        """
+        Args:
+            plot: if True plot results
+        """
 
         for mot in thrusts:
             signal = []
@@ -452,6 +449,10 @@ class Signal2Thrust():
             plt.show()
 
     def motorTransition(self, plot=False, signal_space=False):
+        """
+        Args:
+            plot: if True plot results
+        """
         thrusts_del = self.getThrust(trigger_delay=0.5, plot=False)
         thrusts = self.getThrust(trigger_delay=0.0, plot=False)
 
@@ -637,22 +638,3 @@ class Signal2Thrust():
         axs[2,1].legend()
         plt.show()
 
-
-
-
-
-def main():
-    s2t = Signal2Thrust(series="signal_20221206")
-
-    thrusts = s2t.getThrust(plot=False)
-    s2t.approxSignal2Thrust(thrusts, plot=False, print_coeff=True)
-    s2t.approxThrust2Signal(thrusts, plot=False, print_coeff=True)
-
-    # s2t.intermolateForce(plot=True)
-    # s2t.saveData()
-
-    trans_up, trans_dw = s2t.motorTransition(plot=False, signal_space=False)
-    s2t.plotTransTime(trans_up, trans_dw)
-
-if __name__ == "__main__":
-    main()
