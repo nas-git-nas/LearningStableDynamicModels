@@ -220,3 +220,77 @@ def imuShift(self, plot=False):
                 ax.legend()
                 ax.set_title(f"Dimension {i}")
             plt.show()
+
+def shiftIMUData(self, shift):
+    for exp in self.data.exps:
+        if shift > 0:
+            self.tx[exp] = self.tx[exp][:-shift]
+            self.x[exp] = self.x[exp][:-shift,:]
+            self.dx[exp] = self.dx[exp][:-shift,:]
+            self.ddx[exp] = self.ddx[exp][:-shift,:]
+            self.u[exp] = self.u[exp][:-shift,:]
+            self.imu_body[exp] = self.imu_body[exp][shift:,:]
+        elif shift < 0:
+            self.tx[exp] = self.tx[exp][-shift:] - self.tx[exp][-shift]
+            self.x[exp] = self.x[exp][-shift:,:]
+            self.dx[exp] = self.dx[exp][-shift:,:]
+            self.ddx[exp] = self.ddx[exp][-shift:,:]
+            self.u[exp] = self.u[exp][-shift:,:]
+            self.imu_body[exp] = self.imu_body[exp][:shift,:]
+
+def rotMatrix(self, theta):
+    """
+    Calc. 3D rotational matrix for batch
+    Args:
+        theta: rotation aroung z-axis, tensor (N)
+    Returns:
+        rot_mat: rotational matrix, tensor (N,S,S)
+    """
+    rot_mat = np.zeros((theta.shape[0], 3, 3))
+    cos = np.cos(theta) # (N)
+    sin = np.sin(theta) # (N)
+    rot_mat[:,0,0] = cos
+    rot_mat[:,1,1] = cos
+    rot_mat[:,0,1] = -sin
+    rot_mat[:,1,0] = sin
+    rot_mat[:,2,2] = np.ones(theta.shape[0])
+    return rot_mat
+
+def PlotDiffPosition(self):
+
+    tx, x, dx, ddx = self.data.get(names=["tx", "x", "dx", "ddx"])
+
+    for exp in self.data.exps:
+        fig, axs = plt.subplots(nrows=self.x[exp].shape[1], ncols=2, figsize =(8, 8))             
+        for i, ax in enumerate(axs[:,0]):
+            ax.plot(tx[exp], x[exp][:,i], color="b", label="pos")
+            ax.plot(tx[exp], dx[exp][:,i], color="g", label="vel")
+            ax.plot(tx[exp], ddx[exp][:,i], color="r", label="acc")
+            #ax.plot(self.tx[exp], self.imu_world[exp], color="c", label="imu")
+            # ax.set_ylim([np.min(self.ddx[exp][:,i]), np.max(self.ddx[exp][:,i])])
+            ax.legend()
+            ax.set_title(f"Dimension {i}")
+
+        # integrate dx and calc. error
+        d_error = self.integrate(dx[exp], tx[exp], x[exp][0,:])
+        d_error = d_error - x[exp]
+
+        # double integrate imu and calc. error
+        dd_error = self.integrate(ddx[exp], tx[exp], dx[exp][0,:])
+        dd_error = self.integrate(dd_error, tx[exp], x[exp][0,:])
+        dd_error = dd_error - x[exp]
+
+        # double integrate ddx and calc. error
+        # imu_error = self.integrate(self.imu[exp], self.tx[exp], self.dx[exp][0,:])
+        # imu_error = self.integrate(imu_error, self.tx[exp], self.x[exp][0,:])
+        # imu_error = imu_error - self.x[exp]
+
+        for i, ax in enumerate(axs[:,1]):
+            ax.plot(tx[exp], d_error[:,i], color="g", label="dx error")
+            ax.plot(tx[exp], dd_error[:,i], color="r", label="ddx error")
+            # if i < 2:
+            #     ax.plot(self.tx[exp], imu_error[:,i], color="c", label="imu error")
+            ax.legend()
+            ax.set_title(f"Dimension {i}")                    
+
+        plt.show()

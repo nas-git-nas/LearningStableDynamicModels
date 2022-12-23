@@ -156,6 +156,24 @@ class Plot():
         if log_scale:
             axis.set_yscale("log")
 
+    # def modelCorrection(self):
+    #     X, U, dX_real = self.sys.getData()
+
+    #     with torch.no_grad():
+    #         acc_cor = self.learn_cor.model.forward(X=X, U=U)
+
+    #     nb_bins = 15
+    #     X_bins = np.zeros((X.shape[0],3))
+    #     for i in range(3,6):
+    #         X_bins[:,i] = np.digitize(x=X[:,i], bins=np.linspace(start=np.min(X[:,i]), stop=np.max(X[:,i]), num=nb_bins))
+
+    #     X_bin_means = np.zeros((nb_bins,3))
+    #     for bin in range(nb_bins):
+            
+
+
+        
+
     def modelGenX(self, xmin, xmax):
         # define range of plot
         x0_range = torch.linspace(xmin[0], xmax[0], 20).to(self.device)

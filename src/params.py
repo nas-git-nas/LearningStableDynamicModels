@@ -9,27 +9,31 @@ class Params():
         params_path = os.path.join("params", "params_"+self.args.model_type+".json")
 
         with open(params_path) as f:
-            args = json.load(f)
+            params = json.load(f)
 
         if self.args.model_type == "HolohoverGrey" or self.args.model_type == "Signal2Thrust":
             # distance form center (0,0,0) in robot frame to motors
-            self.motor_distance = args["model"]["motor_distance"]
+            self.motor_distance = params["model"]["motor_distance"]
             # offset angle of first motor pair (angle between motor 1 and motor 2)
-            self.motor_angle_offset = args["model"]["motor_angle_offset"]
+            self.motor_angle_offset = params["model"]["motor_angle_offset"]
             # angle between center of motor pair and motors to the left and right
-            self.motor_angel_delta = args["model"]["motor_angel_delta"]
+            self.motor_angel_delta = params["model"]["motor_angel_delta"]
             # center of mass
-            self.center_of_mass = args["model"]["center_of_mass"]
+            self.center_of_mass = params["model"]["center_of_mass"]
             # mass of holohover
-            self.mass = args["model"]["mass"] 
+            self.mass = params["model"]["mass"] 
             # intitial inertia
-            self.inertia = args["model"]["inertia"]
+            self.inertia = params["model"]["inertia"]
             # initial signal2thrust coeff., tensor (M, poly_expand_U)
             # for each motor [a1, a2, a3] where thrust = a1*u + a2*u^2 + a3*u^3
-            self.signal2thrust = args["model"]["signal2thrust"]
+            self.signal2thrust = params["model"]["signal2thrust"]
             # initial thrust2signal coeff., tensor (M, poly_expand_U)
             # for each motor [a1, a2, a3], where u = a1*thrust + a2*thrust^2 + a3*thrust^3
-            self.thrust2signal = args["model"]["thrust2signal"]
+            self.thrust2signal = params["model"]["thrust2signal"]
+            # control input time constant (first order model) acceleration
+            self.tau_up = params["model"]["tau_up"]
+            # control input time constant (first order model) decceleration
+            self.tau_dw = params["model"]["tau_dw"]
 
     def save(self, model):
         params = {}
@@ -49,7 +53,6 @@ class Params():
                 sig2thr_list.append(list(lin_fct.weight.detach().numpy().flatten().astype(float)))
             params["model"]["learned_signal2thrust"] = sig2thr_list
             params["model"]["thrust2signal"] = self.thrust2signal
-
             params["model"]["motor_distance"] = self.motor_distance
             params["model"]["motor_angle_offset"] = self.motor_angle_offset
             params["model"]["motor_angel_delta"] = self.motor_angel_delta
@@ -57,6 +60,8 @@ class Params():
             params["model"]["learned_motors_vec"] = model.motors_vec.detach().numpy().tolist()
             params["model"]["init_motors_pos"] = model.initMotorPos(self).detach().numpy().tolist()
             params["model"]["learned_motors_pos"] = model.motors_pos.detach().numpy().tolist()
+            params["model"]["tau_up"] = self.tau_up
+            params["model"]["tau_dw"] = self.tau_dw
         
         # Serializing json
         options = jsbeautifier.default_options()
