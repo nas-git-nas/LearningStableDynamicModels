@@ -27,7 +27,10 @@ def loadcell(device):
     pp = Loadcell(data=data, plot=plot, sys=sys, model=model)
     pp.cropData()
     pp.interpolateU(plot=False)
-    pp.locSig(trigger_delay=0.5, plot=True)
+    pp.locSig(trigger_delay=0.5, plot=False)
+    pp.calcNorm(plot=False)
+    pp.calcMeanNorm(plot=False)
+    pp.signal2thrust(plot=True, verb=True)
 
     # s2t = Loadcell(series="signal_20221206")
 

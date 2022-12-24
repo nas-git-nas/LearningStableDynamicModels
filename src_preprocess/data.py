@@ -236,7 +236,7 @@ class Data():
                 if crop_data:
                     with open(os.path.join(root, f), "r") as f_count:
                         nb_rows = sum(1 for _ in f_count)
-                    skip_footer = nb_rows-self.keep_nb_rows
+                    skip_footer = nb_rows-crop_data
 
                 # add eperiment either to optitrack of control data
                 if f.find("optitrack") != -1:
