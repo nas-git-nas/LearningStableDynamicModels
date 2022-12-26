@@ -30,7 +30,9 @@ def loadcell(device):
     pp.locSig(trigger_delay=0.5, plot=False)
     pp.calcNorm(plot=False)
     pp.calcMeanNorm(plot=False)
-    pp.signal2thrust(plot=True, verb=True)
+    pp.signal2thrust(plot=False, verb=False)
+    pp.thrust2signal(plot=False, verb=False)
+    pp.motorTransition(thr_y_final=0.95, plot=True, signal_space=False)
 
     # s2t = Loadcell(series="signal_20221206")
 

@@ -20,8 +20,8 @@ class Loadcell():
         self.model = model
 
         # data
-        self.sgs = None # contains [start,stop] of the thrust for every signal and motor, array (nb. motors, nb. signals, 2)
-        self.bgs = None # contains [start,stop] of the back-ground for every signal and motor, array (nb. motors, nb. signals, 2)
+        self.sgs = None # contains [signal_start,signal_start,stop] of the thrust for every signal and motor, array (nb. motors, nb. signals, 2)
+        self.bgs = None # contains [signal_start,signal_start,stop] of the back-ground for every signal and motor, array (nb. motors, nb. signals, 2)
         self.ids = None # contains [motor_id,signal] for every signal and motor, array (nb. motors, nb. signals, 2)
         self.means = None # contains means of thrust for every signal and motor, array (nb. motors, nb. signals)
         self.std = None # contains stds of thrust for every signal and motor, array (nb. motors, nb. signals)
@@ -84,8 +84,8 @@ class Loadcell():
             bg_in_front = False
 
         tsig_start = tf[0] + trigger_delay
-        sgs = np.zeros((self.M,self.nb_sig_per_mot,2), dtype=int)
-        bgs = np.zeros((self.M,self.nb_sig_per_mot,2), dtype=int)
+        sgs = np.zeros((self.M,self.nb_sig_per_mot,3), dtype=int)
+        bgs = np.zeros((self.M,self.nb_sig_per_mot,3), dtype=int)
         ids = np.zeros((self.M,self.nb_sig_per_mot,2), dtype=float)
         m = 0
         s = 0
@@ -101,7 +101,8 @@ class Loadcell():
 
                 if prev_state: # signal
                     sgs[m,s,0] = np.argmax(tf>tsig_start)
-                    sgs[m,s,1] = np.argmax(tf>=tf[i])
+                    sgs[m,s,1] = np.argmax(tf>tsig_start+trigger_delay)
+                    sgs[m,s,2] = np.argmax(tf>=tf[i])
                     ids[m,s,0] = np.argmax(u[i-10]) + 1 # go 10 indices back to avoid transition zone
                     ids[m,s,1] = np.max(u[i-10,:])
                     if bg_in_front:
@@ -112,7 +113,8 @@ class Loadcell():
                             m += 1
                 else: # background
                     bgs[m,s,0] = np.argmax(tf>tsig_start)
-                    bgs[m,s,1] = np.argmax(tf>=tf[i])
+                    bgs[m,s,1] = np.argmax(tf>tsig_start+trigger_delay)
+                    bgs[m,s,2] = np.argmax(tf>=tf[i])
                     if not bg_in_front:
                         if s < self.nb_sig_per_mot-1:
                             s += 1
@@ -120,7 +122,7 @@ class Loadcell():
                             s = 0
                             m += 1
 
-                tsig_start = tf[i] + trigger_delay
+                tsig_start = tf[i]
                 prev_state = state
                 if m == self.M:
                     break
@@ -139,12 +141,13 @@ class Loadcell():
         sgs, bgs = self.sgs.copy(), self.bgs.copy()
 
         # remove unused back gorund
-        if bgs[0,0,0] < sgs[0,0,0]: # back ground before signal
-            f = f[0:sgs[self.M-1,self.nb_sig_per_mot-1,1],:]
-            tf = tf[0:sgs[self.M-1,self.nb_sig_per_mot-1,1]]
+        if bgs[0,0,1] < sgs[0,0,1]: # back ground before signal
+            pass
+            # f = f[0:sgs[self.M-1,self.nb_sig_per_mot-1,1],:]
+            # tf = tf[0:sgs[self.M-1,self.nb_sig_per_mot-1,1]]
         else: # back ground after signal
-            f = f[0:bgs[self.M-1,self.nb_sig_per_mot-1,1],:]
-            tf = tf[0:bgs[self.M-1,self.nb_sig_per_mot-1,1]]
+            f = f[0:bgs[self.M-1,self.nb_sig_per_mot-1,2],:]
+            tf = tf[0:bgs[self.M-1,self.nb_sig_per_mot-1,2]]
 
         # subtract mean back ground for every region and dimension
         f = self._subtractBG(f=f, sgs=sgs, bgs=bgs)
@@ -172,14 +175,14 @@ class Loadcell():
         for i in range(sgs.shape[0]):
             for j in range(sgs.shape[1]):
 
-                bg_mean = np.mean(f[bgs[i,j,0]:bgs[i,j,1]], axis=0)
+                bg_mean = np.mean(f[bgs[i,j,1]:bgs[i,j,2]], axis=0)
 
-                if bgs[i,j,0] < sgs[i,j,0]: # back ground before signal
-                    f[prev_idx:sgs[i,j,1]] = f[prev_idx:sgs[i,j,1]] - bg_mean
-                    prev_idx = sgs[i,j,1]
+                if bgs[i,j,1] < sgs[i,j,1]: # back ground before signal
+                    f[prev_idx:sgs[i,j,2]] = f[prev_idx:sgs[i,j,2]] - bg_mean
+                    prev_idx = sgs[i,j,2]
                 else: # back ground after signal
-                    f[prev_idx:bgs[i,j,1]] = f[prev_idx:bgs[i,j,1]] - bg_mean
-                    prev_idx = bgs[i,j,1]
+                    f[prev_idx:bgs[i,j,2]] = f[prev_idx:bgs[i,j,2]] - bg_mean
+                    prev_idx = bgs[i,j,2]
 
         return f
 
@@ -193,8 +196,8 @@ class Loadcell():
         for i in range(sgs.shape[0]):
             for j in range(sgs.shape[1]):
 
-                means[i,j] = np.mean(f[sgs[i,j,0]:sgs[i,j,1],2], axis=0)
-                stds[i,j] = np.std(f[sgs[i,j,0]:sgs[i,j,1],2], axis=0)
+                means[i,j] = np.mean(f[sgs[i,j,1]:sgs[i,j,2],2], axis=0)
+                stds[i,j] = np.std(f[sgs[i,j,1]:sgs[i,j,2],2], axis=0)
 
         if plot:
             self.plot.calcMeanNorm(means=means, stds=stds, ids=ids)
@@ -222,105 +225,79 @@ class Loadcell():
         if plot:
             self.plot.signal2thrust(means=means, stds=stds, ids=ids, coeffs=coeffs)
 
+    def thrust2signal(self, plot=False, verb=True):
+        ids, means, stds = self.ids.copy(), self.means.copy(), self.stds.copy()
+
+        poly_fcts = [polyFct2, polyFct3, polyFct4, polyFct5]
+        coeffs = np.zeros((means.shape[0],len(poly_fcts),5))
+        for i in range(means.shape[0]):
+           
+            for j, fct in enumerate(poly_fcts):
+                coeff, _ = optimize.curve_fit(fct, means[i,:], ids[i,:,1])
+                coeffs[i,j,:j+2] = coeff
+              
+                if verb and j==1:
+                    print(f"\nMotor: thrust->signal {i+1} (poly.: a1*x + a2*x^2 + ... an*x^n)")
+                    print(f"[{coeff[0]}, {coeff[1]}, {coeff[2]}]")
+                    print(f"Motor: thrust->signal {i+1} (poly.: an*x^n + a(n-1)*x^(n-1) + ... + a1*x)")
+                    print(f"[{np.flip(coeff)[0]}, {np.flip(coeff)[1]}, {np.flip(coeff)[2]}]")
+        
+        if plot:
+            self.plot.thrust2signal(means=means, stds=stds, ids=ids, coeffs=coeffs)
+
   
                 
 
-    
+    def motorTransition(self, thr_y_final=0.95, plot=False, signal_space=False):
+        f, tf = self.data.get(names=["f", "tf"])
+        f, tf = list(f.values())[0], list(tf.values())[0]
+        fn = f[:,2]
+        sgs, ids, means = self.sgs.copy(), self.ids.copy(), self.means.copy()
 
+        bgs_trans = self.bgs.copy()
+        if bgs_trans[0,0,1] < sgs[0,0,1]: # back ground before signal
+            bgs_trans = bgs_trans.flatten()[3:]
+            bgs_trans = np.append(bgs_trans, values=[sgs[-1,-1,2], sgs[-1,-1,2]+100, len(tf)-1])
+            bgs_trans = bgs_trans.reshape(self.M, self.nb_sig_per_mot, 3)
 
-    
+        trans = np.zeros((sgs.shape[0],sgs.shape[1],2)) # (nb. motors, nb. signals, [up,down])
+        delay = np.zeros((sgs.shape[0],sgs.shape[1],2)) # (nb. motors, nb. signals, [up,down])
+        tau = np.zeros((sgs.shape[0],sgs.shape[1],2)) # (nb. motors, nb. signals, [up,down])
+        for i in range(sgs.shape[0]):
+            for j in range(sgs.shape[1]):
+                # skip signal if noise level is too high
+                noise_thr = 2*(np.max(fn[bgs_trans[i,j,1]:bgs_trans[i,j,2]]) - np.min(fn[bgs_trans[i,j,1]:bgs_trans[i,j,2]]))
+                if noise_thr > means[i,j]:
+                    continue
 
-    
+                if signal_space:
+                    steady_state = ids[i,j,1]
+                else:
+                    steady_state = means[i,j]
 
-    def approxThrust2Signal(self, thrusts, plot=False, print_coeff=False):
-        """
-        Args:
-            plot: if True plot results
-        """
+                # calc. first order approx. 
+                fit_up_X = (tf[sgs[i,j,0]:sgs[i,j,1]] - tf[sgs[i,j,0]], np.ones(tf[sgs[i,j,0]:sgs[i,j,1]].shape) * steady_state)
+                [tau[i,j,0], delay[i,j,0]], _ = optimize.curve_fit(expRise, fit_up_X, fn[sgs[i,j,0]:sgs[i,j,1]], [0.05, 0.04])
 
-        for mot in thrusts:
-            signal = []
-            thrust_mean = []
-            thrust_std = []
-            for sig in thrusts[mot]:
-                signal.append(sig)
-                thrust_mean.append(thrusts[mot][sig]["mean"])
-                thrust_std.append(thrusts[mot][sig]["std"])
+                fit_dw_X = (tf[bgs_trans[i,j,0]:bgs_trans[i,j,1]] - tf[bgs_trans[i,j,0]], 
+                            np.ones(tf[bgs_trans[i,j,0]:bgs_trans[i,j,1]].shape) * steady_state)
+                [tau[i,j,1], delay[i,j,1]], _ = optimize.curve_fit(expFall, fit_dw_X, fn[bgs_trans[i,j,0]:bgs_trans[i,j,1]], [0.05, 0.04])                  
 
-            if plot:
-                fig, axs = plt.subplots(nrows=2, ncols=2, figsize =(12, 8))
-                fig.suptitle(f"Motor {mot+1}")
+                # calc. time of exponential to reach certain procentage of final value
+                trans[i,j,0] = - tau[i,j,0] * np.log(1-thr_y_final)
+                trans[i,j,1] = - tau[i,j,1] * np.log(1-thr_y_final)
 
-            poly_fcts = [polyFct2, polyFct3, polyFct4, polyFct5]
-            for j, fct in enumerate(poly_fcts):
-                #coeff = np.polyfit(signal, thrust_mean, deg=deg)
-                degree = j + 2
-                coeff, _ = optimize.curve_fit(fct, thrust_mean, signal)
-
-                lin_x = np.linspace(-0.2, 1.2, 100)
-                lin_X = np.zeros((100,degree))
-                for i in range(degree):
-                    lin_X[:,i] = np.power(lin_x, i+1)
-                signal_approx = lin_X @ coeff
-
-                stat_x = np.array(signal, dtype=float)
-                stat_X = np.zeros((len(signal),degree))
-                for i in range(degree):
-                    stat_X[:,i] = np.power(stat_x, i+1)
-                stat_approx = stat_X @ coeff
-                _, _, rvalue, _, _ = stats.linregress(stat_approx, np.array(thrust_mean, dtype=float))
-
-                if plot:
-                    k = int(j/len(axs[0]))
-                    l = j % len(axs[0])
-                    axs[k,l].scatter(thrust_mean, signal, color="b", label="Meas.")
-                    axs[k,l].plot(lin_x, signal_approx, color="g", label="Approx.")
-                    axs[k,l].set_title(f"Deg={degree} (R^2={np.round(rvalue**2, 4)})")
-                    axs[k,l].set_ylabel("Signal")
-                    axs[k,l].set_xlabel("Thrust")
-                    axs[k,l].legend()
-
-            if plot:
-                plt.show()
-    
-        if plot:
-            fig, axs = plt.subplots(nrows=1, ncols=1, figsize =(8, 8))
-
-        for mot in thrusts:
-            signal = []
-            thrust_mean = []
-            thrust_std = []
-            for sig in thrusts[mot]:
-                signal.append(sig)
-                thrust_mean.append(thrusts[mot][sig]["mean"])
-                thrust_std.append(thrusts[mot][sig]["std"])
-
-            #coeff = np.polyfit(signal, thrust_mean, deg=3)
-            coeff, _ = optimize.curve_fit(polyFct3, thrust_mean, signal)
-            
-            if print_coeff:
-                print(f"\nMotor: thrust->signal {mot+1} (poly.: a1*x + a2*x^2 + ... an*x^n)")
-                print(f"[{coeff[0]}, {coeff[1]}, {coeff[2]}]")
-                print(f"Motor: thrust->signal {mot+1} (poly.: an*x^n + a(n-1)*x^(n-1) + ... + a1*x)")
-                print(f"[{np.flip(coeff)[0]}, {np.flip(coeff)[1]}, {np.flip(coeff)[2]}]")
-
-            if plot:
-                lin_x = np.linspace(0, 1, 100)
-                lin_X = np.zeros((100,3))
-                for i in range(lin_X.shape[1]):
-                    lin_X[:,i] = np.power(lin_x, i+1)
-                signal_approx = lin_X @ coeff
-
-                axs.plot(lin_x, signal_approx, label=f"Motor {mot}")
-                axs.set_title(f"Thrust approx. (poly. degree 3)")
-                axs.set_ylabel("Signal")
-                axs.set_xlabel("Thrust")
-                axs.legend()
 
         if plot:
-            plt.show()
+            self.plot.motorTransition(sgs=sgs, bgs_trans=bgs_trans, ids=ids, means=means, tau=tau, 
+                                        delay=delay, trans=trans, signal_space=signal_space)
 
-    def motorTransition(self, plot=False, signal_space=False):
+    
+
+    
+
+    
+    def motorTransition_old(self, plot=False, signal_space=False):
         """
         Args:
             plot: if True plot results
@@ -434,13 +411,13 @@ class Loadcell():
 
         return trans_up, trans_dw
 
-    def thrust2signal(self, thrust_mot, mot):
+    # def thrust2signal(self, thrust_mot, mot):
 
-        thrust = torch.zeros((len(thrust_mot), 6), dtype=torch.float32)
-        thrust[:,mot-1] = torch.tensor(thrust_mot, dtype=torch.float32)
+    #     thrust = torch.zeros((len(thrust_mot), 6), dtype=torch.float32)
+    #     thrust[:,mot-1] = torch.tensor(thrust_mot, dtype=torch.float32)
 
-        thrust_poly = self.sys.polyExpandU(thrust)
-        sig = self.model.thrust2signal(thrust_poly)
+    #     thrust_poly = self.sys.polyExpandU(thrust)
+    #     sig = self.model.thrust2signal(thrust_poly)
 
         return sig[:,mot-1].detach().numpy()
 
@@ -745,6 +722,94 @@ class Loadcell():
 #                 axs.set_title(f"Thrust approx. (poly. degree 3)")
 #                 axs.set_xlabel("Signal")
 #                 axs.set_ylabel("Thrust")
+#                 axs.legend()
+
+#         if plot:
+#             plt.show()
+
+# def approxThrust2Signal(self, thrusts, plot=False, print_coeff=False):
+#         """
+#         Args:
+#             plot: if True plot results
+#         """
+
+#         for mot in thrusts:
+#             signal = []
+#             thrust_mean = []
+#             thrust_std = []
+#             for sig in thrusts[mot]:
+#                 signal.append(sig)
+#                 thrust_mean.append(thrusts[mot][sig]["mean"])
+#                 thrust_std.append(thrusts[mot][sig]["std"])
+
+#             if plot:
+#                 fig, axs = plt.subplots(nrows=2, ncols=2, figsize =(12, 8))
+#                 fig.suptitle(f"Motor {mot+1}")
+
+#             poly_fcts = [polyFct2, polyFct3, polyFct4, polyFct5]
+#             for j, fct in enumerate(poly_fcts):
+#                 #coeff = np.polyfit(signal, thrust_mean, deg=deg)
+#                 degree = j + 2
+#                 coeff, _ = optimize.curve_fit(fct, thrust_mean, signal)
+
+#                 lin_x = np.linspace(-0.2, 1.2, 100)
+#                 lin_X = np.zeros((100,degree))
+#                 for i in range(degree):
+#                     lin_X[:,i] = np.power(lin_x, i+1)
+#                 signal_approx = lin_X @ coeff
+
+#                 stat_x = np.array(signal, dtype=float)
+#                 stat_X = np.zeros((len(signal),degree))
+#                 for i in range(degree):
+#                     stat_X[:,i] = np.power(stat_x, i+1)
+#                 stat_approx = stat_X @ coeff
+#                 _, _, rvalue, _, _ = stats.linregress(stat_approx, np.array(thrust_mean, dtype=float))
+
+#                 if plot:
+#                     k = int(j/len(axs[0]))
+#                     l = j % len(axs[0])
+#                     axs[k,l].scatter(thrust_mean, signal, color="b", label="Meas.")
+#                     axs[k,l].plot(lin_x, signal_approx, color="g", label="Approx.")
+#                     axs[k,l].set_title(f"Deg={degree} (R^2={np.round(rvalue**2, 4)})")
+#                     axs[k,l].set_ylabel("Signal")
+#                     axs[k,l].set_xlabel("Thrust")
+#                     axs[k,l].legend()
+
+#             if plot:
+#                 plt.show()
+    
+#         if plot:
+#             fig, axs = plt.subplots(nrows=1, ncols=1, figsize =(8, 8))
+
+#         for mot in thrusts:
+#             signal = []
+#             thrust_mean = []
+#             thrust_std = []
+#             for sig in thrusts[mot]:
+#                 signal.append(sig)
+#                 thrust_mean.append(thrusts[mot][sig]["mean"])
+#                 thrust_std.append(thrusts[mot][sig]["std"])
+
+#             #coeff = np.polyfit(signal, thrust_mean, deg=3)
+#             coeff, _ = optimize.curve_fit(polyFct3, thrust_mean, signal)
+            
+#             if print_coeff:
+#                 print(f"\nMotor: thrust->signal {mot+1} (poly.: a1*x + a2*x^2 + ... an*x^n)")
+#                 print(f"[{coeff[0]}, {coeff[1]}, {coeff[2]}]")
+#                 print(f"Motor: thrust->signal {mot+1} (poly.: an*x^n + a(n-1)*x^(n-1) + ... + a1*x)")
+#                 print(f"[{np.flip(coeff)[0]}, {np.flip(coeff)[1]}, {np.flip(coeff)[2]}]")
+
+#             if plot:
+#                 lin_x = np.linspace(0, 1, 100)
+#                 lin_X = np.zeros((100,3))
+#                 for i in range(lin_X.shape[1]):
+#                     lin_X[:,i] = np.power(lin_x, i+1)
+#                 signal_approx = lin_X @ coeff
+
+#                 axs.plot(lin_x, signal_approx, label=f"Motor {mot}")
+#                 axs.set_title(f"Thrust approx. (poly. degree 3)")
+#                 axs.set_ylabel("Signal")
+#                 axs.set_xlabel("Thrust")
 #                 axs.legend()
 
 #         if plot:
