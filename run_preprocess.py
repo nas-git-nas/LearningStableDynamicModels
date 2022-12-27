@@ -23,28 +23,16 @@ def loadcell(device):
     model = HolohoverModelGrey(args=args, params=params, dev=device)
 
     data = Data(series_name=series_name, crop_data=crop_data, crop_exp=crop_exp)
-    plot = PlotLoadcell(data=data)
+    plot = PlotLoadcell(data=data, show_plots=False, save_dir="plots/preprocessing")
     pp = Loadcell(data=data, plot=plot, sys=sys, model=model)
     pp.cropData()
     pp.interpolateU(plot=False)
     pp.locSig(trigger_delay=0.5, plot=False)
     pp.calcNorm(plot=False)
     pp.calcMeanNorm(plot=False)
-    pp.signal2thrust(plot=False, verb=False)
-    pp.thrust2signal(plot=False, verb=False)
-    pp.motorTransition(thr_y_final=0.95, plot=True, signal_space=False)
-
-    # s2t = Loadcell(series="signal_20221206")
-
-    # thrusts = s2t.getThrust(plot=False)
-    # s2t.approxSignal2Thrust(thrusts, plot=False, print_coeff=True)
-    # s2t.approxThrust2Signal(thrusts, plot=False, print_coeff=True)
-
-    # # s2t.intermolateForce(plot=True)
-    # # s2t.saveData()
-
-    # trans_up, trans_dw = s2t.motorTransition(plot=False, signal_space=False)
-    # s2t.plotTransTime(trans_up, trans_dw)
+    pp.signal2thrustCoeff(plot=True, verb=False)
+    pp.thrust2signalCoeff(plot=False, verb=False)
+    pp.motorTransition(thr_y_final=0.95, plot=False, signal_space=False)
 
 def holohover(device):
     series_name = "holohover_20221208"
@@ -97,9 +85,7 @@ def main():
     device = torch.device(dev)
 
     loadcell(device)
-
     # holohover(device=device)
-
     # validation(device=device)
 
 if __name__ == "__main__":
