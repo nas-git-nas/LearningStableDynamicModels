@@ -13,7 +13,7 @@ from src_preprocess.plot_holohover import PlotHolohover
 
 
 def loadcell(device):
-    series_name = "signal_20221206"
+    series_name = "signal_20221206" #"signal_20221121"
     crop_data = None
     crop_exp = None
 
@@ -23,21 +23,21 @@ def loadcell(device):
     model = HolohoverModelGrey(args=args, params=params, dev=device)
 
     data = Data(series_name=series_name, crop_data=crop_data, crop_exp=crop_exp)
-    plot = PlotLoadcell(data=data, show_plots=False, save_dir="plots/preprocessing")
+    plot = PlotLoadcell(data=data, show_plots=False, save_dir="plots/preprocessing_forcecell")
     pp = Loadcell(data=data, plot=plot, sys=sys, model=model)
     pp.cropData()
     pp.interpolateU(plot=False)
-    pp.locSig(trigger_delay=0.5, plot=False)
+    pp.locSig(trigger_delay=0.5, plot=True)
     pp.calcNorm(plot=False)
     pp.calcMeanNorm(plot=False)
-    pp.signal2thrustCoeff(plot=True, verb=False)
+    pp.signal2thrustCoeff(plot=False, verb=False)
     pp.thrust2signalCoeff(plot=False, verb=False)
     pp.motorTransition(thr_y_final=0.95, plot=False, signal_space=False)
 
 def holohover(device):
     series_name = "holohover_20221208"
     crop_data = None
-    crop_exp = 1
+    crop_exp = None
 
     args = Args(model_type="HolohoverGrey")
     params = Params(args=args)
@@ -45,16 +45,16 @@ def holohover(device):
     model = HolohoverModelGrey(args=args, params=params, dev=device)
 
     data = Data(series_name=series_name, crop_data=crop_data, crop_exp=crop_exp)
-    plot = PlotHolohover(data=data)
+    plot = PlotHolohover(data=data, show_plots=False, save_plots=True, save_dir="plots/preprocessing_holohover")
     pp = PreprocessHolohover(data=data, plot=plot, sys=sys, model=model)
 
-    pp.cropData(plot=False)
-    pp.intermolateU(plot=False)
-    pp.firstOrderU(tau_up=params.tau_up, tau_dw=params.tau_dw, plot=False)
-    pp.diffX(plot=False)
-    pp.alignData(plot=False)
+    pp.cropData(plot=True)
+    pp.intermolateU(plot=True)
+    pp.firstOrderU(tau_up=params.tau_up, tau_dw=params.tau_dw, plot=True)
+    pp.diffX(plot=True)
+    pp.alignData(plot=True)
 
-    # data.saveData()
+    data.save(names=["state", "dynamics", "u"])
 
 def validation(device):
     series_name = "validation_20221208"

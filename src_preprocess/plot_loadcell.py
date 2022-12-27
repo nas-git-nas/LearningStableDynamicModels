@@ -40,7 +40,7 @@ class PlotLoadcell():
         
         for exp in self.data.exps:
 
-            fig, axs = plt.subplots(nrows=f[exp].shape[1], figsize =(8, 8))             
+            fig, axs = plt.subplots(nrows=2, figsize =(8, 8))             
             for i, ax in enumerate(axs):
 
                 y_min = np.min(f[exp][:,i])
@@ -48,7 +48,6 @@ class PlotLoadcell():
 
                 if i==0: label = "force(x)"
                 elif i==1: label = "force(y)"
-                elif i==2: label = "force norm"
 
                 ax.plot(tf[exp], f[exp][:,i], color="b", label=label)
                 for i in range(sgs.shape[0]):
@@ -63,12 +62,10 @@ class PlotLoadcell():
 
             axs[0].set_ylabel("force [N]")
             axs[1].set_ylabel("force [N]")
-            axs[2].set_ylabel("force [N]")
-            axs[2].set_xlabel("time [s]")
+            axs[1].set_xlabel("time [s]")
 
             axs[0].set_xlim([315.5, 330.5])
             axs[1].set_xlim([315.5, 330.5])
-            axs[2].set_xlim([315.5, 330.5])
 
             if self.show_plots:
                 plt.show()
@@ -216,9 +213,9 @@ class PlotLoadcell():
                 k = int(j/4)
                 l = j % 4
 
-                bax = brokenaxes(xlims=((0, tf[sgs[i,j,1]]-tf[sgs[i,j,0]]), 
-                                        (tf[bgs_trans[i,j,0]]-0.2-tf[sgs[i,j,0]], tf[bgs_trans[i,j,1]]-tf[sgs[i,j,0]])), 
-                                    subplot_spec=sps[k,l], d=0.007, wspace=0.4, fig=fig)
+                bax = brokenaxes(xlims=((0, tf[sgs[i,j,1]]-0.1-tf[sgs[i,j,0]]), 
+                                        (tf[bgs_trans[i,j,0]]-0.1-tf[sgs[i,j,0]], tf[bgs_trans[i,j,1]]-0.2-tf[sgs[i,j,0]])), 
+                                    subplot_spec=sps[k,l], d=0.005, wspace=0.1, fig=fig)
                 bax.plot(tf[sgs[i,j,0]:sgs[i,j,2]]-tf[sgs[i,j,0]], fn[sgs[i,j,0]:sgs[i,j,2]], color="m")                    
                 bax.plot(tf[bgs_trans[i,j,0]:bgs_trans[i,j,2]]-tf[sgs[i,j,0]], fn[bgs_trans[i,j,0]:bgs_trans[i,j,2]], color="b")
                 bax.set_ylim([0,np.max(fn)])
@@ -270,34 +267,47 @@ class PlotLoadcell():
 
     def motorTransStat(self, ids, tau, delay, trans):
 
+        # delay[3,4,0] = np.nan
+        # trans[3,4,0] = np.nan
+        # tau[3,4,0] = np.nan
+
         not_nan = ~np.isnan(tau)
 
-        fig, axs = plt.subplots(nrows=2, ncols=3, figsize =(12, 8))
+        fig, axs = plt.subplots(nrows=3, ncols=2, figsize =(8, 10))
         for i in range(ids.shape[0]):
             axs[0,0].plot(ids[i,not_nan[i,:,0],1], delay[i,not_nan[i,:,0],0], marker = 'o', label=f"motor {i+1}")
-            axs[1,0].plot(ids[i,not_nan[i,:,1],1], delay[i,not_nan[i,:,1],1], marker = 'o', label=f"motor {i+1}")
-            axs[0,1].plot(ids[i,not_nan[i,:,0],1], trans[i,not_nan[i,:,0],0], marker = 'o', label=f"motor {i+1}")
+            axs[0,1].plot(ids[i,not_nan[i,:,1],1], delay[i,not_nan[i,:,1],1], marker = 'o', label=f"motor {i+1}")
+            axs[1,0].plot(ids[i,not_nan[i,:,0],1], trans[i,not_nan[i,:,0],0], marker = 'o', label=f"motor {i+1}")
             axs[1,1].plot(ids[i,not_nan[i,:,1],1], trans[i,not_nan[i,:,1],1], marker = 'o', label=f"motor {i+1}")
-            axs[0,2].plot(ids[i,not_nan[i,:,0],1], tau[i,not_nan[i,:,0],0], marker = 'o', label=f"motor {i+1}")
-            axs[1,2].plot(ids[i,not_nan[i,:,1],1], tau[i,not_nan[i,:,1],1], marker = 'o', label=f"motor {i+1}")
+            axs[2,0].plot(ids[i,not_nan[i,:,0],1], tau[i,not_nan[i,:,0],0], marker = 'o', label=f"motor {i+1}")
+            axs[2,1].plot(ids[i,not_nan[i,:,1],1], tau[i,not_nan[i,:,1],1], marker = 'o', label=f"motor {i+1}")
 
-        axs[0,0].set_title(f"Up delay (mean={np.round(np.mean(delay[:,:,0].flatten()[not_nan[:,:,0].flatten()]),3)})")
-        axs[1,0].set_title(f"Down delay (mean={np.round(np.mean(delay[:,:,1].flatten()[not_nan[:,:,1].flatten()]),3)})")
-        axs[0,1].set_title(f"Up trans. (mean={np.round(np.mean(trans[:,:,0].flatten()[not_nan[:,:,0].flatten()]),3)})")        
-        axs[1,1].set_title(f"Down trans. (mean={np.round(np.mean(trans[:,:,1].flatten()[not_nan[:,:,1].flatten()]),3)})")
-        axs[0,2].set_title(f"Up tau (mean={np.round(np.mean(tau[:,:,0].flatten()[not_nan[:,:,0].flatten()]),3)})")        
-        axs[1,2].set_title(f"Down tau (mean={np.round(np.mean(tau[:,:,1].flatten()[not_nan[:,:,1].flatten()]),3)})")
+        axs[0,0].set_title(f"Up delay (mean={np.round(np.nanmean(delay[:,:,0]),3)}s)")
+        axs[0,1].set_title(f"Down delay (mean={np.round(np.nanmean(delay[:,:,1]),3)}s)")
+        axs[1,0].set_title(f"Up trans. (mean={np.round(np.nanmean(trans[:,:-2,0]),3)}s)")        
+        axs[1,1].set_title(f"Down trans. (mean={np.round(np.nanmean(trans[:,:,1]),3)}s)")
+        axs[2,0].set_title(f"Up tau (mean={np.round(np.nanmean(tau[:,:-2,0]),3)}s)")        
+        axs[2,1].set_title(f"Down tau (mean={np.round(np.nanmean(tau[:,:,1]),3)}s)")
         axs[0,0].set_ylabel("time (s)")
         axs[1,0].set_ylabel("time (s)")
-        axs[1,0].set_xlabel("signal")
-        axs[1,1].set_xlabel("signal")
-        axs[1,2].set_xlabel("signal")
-        axs[0,0].legend()
-        axs[0,1].legend()
-        axs[1,0].legend()
-        axs[1,1].legend()
-        axs[0,2].legend()
-        axs[1,2].legend()
+        axs[2,0].set_ylabel("time (s)")
+        axs[2,0].set_xlabel("signal")
+        axs[2,1].set_xlabel("signal")
+        axs[0,0].legend(ncol=2)
+        axs[1,0].legend(ncol=2)
+        axs[0,1].legend(ncol=2)
+        axs[1,1].legend(ncol=2)
+        axs[2,0].legend(ncol=2)
+        axs[2,1].legend(ncol=2)
+        delay_y_lim = [0,0.4] # [0.0,0.15]
+        axs[0,0].set_ylim(delay_y_lim)
+        axs[0,1].set_ylim(delay_y_lim)
+        trans_y_lim = [0,0.25] #[0.0,0.25]
+        axs[1,0].set_ylim(trans_y_lim)
+        axs[1,1].set_ylim(trans_y_lim)
+        tau_y_lim = [0,0.1] #[0.0,0.08]
+        axs[2,0].set_ylim(tau_y_lim)
+        axs[2,1].set_ylim(tau_y_lim)
         
         if self.show_plots:
             plt.show()

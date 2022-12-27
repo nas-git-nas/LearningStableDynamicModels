@@ -1,23 +1,35 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import os
 
 
 class PlotHolohover():
-    def __init__(self, data) -> None:
+    def __init__(self, data, show_plots, save_plots, save_dir) -> None:
         self.data = data
+        self.show_plots = show_plots
+        self.save_plots = save_plots
+        self.save_dir = save_dir
+        self.xlim = [5, 8]
 
-    def cropData(self, plot_lw_x_idx, plot_lw_u_idx, plot_up_x_idx, plot_up_u_idx):
+    def cropData(self, plot_lw_x_idx, plot_up_x_idx):
         """
         Plot removed data in the beginning and the end
         """
-        x, tx, u, tu = self.data.get(names=["x", "tx", "u", "tu"])
+        x, tx = self.data.get(names=["x", "tx"])
 
         for exp in self.data.exps:
             plt.plot(tx[exp], x[exp][:,2], )
             plt.vlines(tx[exp][plot_lw_x_idx[exp]], ymin=-3.3, ymax=3.3, colors="r")
             plt.vlines(tx[exp][plot_up_x_idx[exp]], ymin=-3.3, ymax=3.3, colors="r")
-            plt.title(f"Theta of exp. {exp}")
-            plt.show()
+            plt.title(f"Theta of exp. {exp[30:]}")
+            plt.xlabel("time [s]")
+            plt.ylabel("angle [rad]")
+
+            if self.show_plots:
+                plt.show()
+            if self.save_plots:
+                plt.savefig(os.path.join(self.save_dir, "cropData.pdf"))
+                break
 
     def intermolateU(self, u_inter):
         """
@@ -29,13 +41,27 @@ class PlotHolohover():
         u_inter = u_inter.copy()
 
         for exp in self.data.exps:
-            fig, axs = plt.subplots(nrows=u[exp].shape[1], figsize =(8, 8))             
-            for i, ax in enumerate(axs):
-                ax.plot(tu[exp], u[exp][:,i], color="b", label="u")
-                ax.plot(tx[exp], u_inter[exp][:,i], '--', color="r", label="u inter.")
-                ax.legend()
-                ax.set_title(f"Control input {i}")
-            plt.show()
+            fig, axs = plt.subplots(nrows=3, ncols=2, figsize =(8, 8))             
+            for i in range(u[exp].shape[1]):
+                k = int(i/len(axs[0]))
+                l = i % len(axs[0])
+
+                axs[k,l].plot(tu[exp], u[exp][:,i], color="b", label=f"u({i+1})")
+                axs[k,l].plot(tx[exp], u_inter[exp][:,i], '--', color="r", label=f"u({i+1}) inter.")
+                axs[k,l].legend()
+                axs[k,l].set_xlim(self.xlim)
+
+            axs[0,0].set_ylabel("signal")
+            axs[1,0].set_ylabel("signal")
+            axs[2,0].set_ylabel("signal")
+            axs[2,0].set_xlabel("time [s]")
+            axs[2,1].set_xlabel("time [s]")
+
+            if self.show_plots:
+                plt.show()
+            if self.save_plots:
+                plt.savefig(os.path.join(self.save_dir, "intermolateU.pdf"))
+                break
 
     def firstOrderU(self, u_approx):
         """
@@ -47,26 +73,44 @@ class PlotHolohover():
         u_approx = u_approx.copy()
 
         for exp in self.data.exps:    
-            fig, axs = plt.subplots(nrows=len(self.data.exps), figsize =(8, 8))             
-            for i, ax in enumerate(axs):
-                ax.plot(tx[exp], u[exp][:,i], color="b", label="u")
-                ax.plot(tx[exp], u_approx[exp][:,i], '--', color="r", label="u approx.")
-                ax.legend()
-                ax.set_title(f"Control input {i}")
-            plt.show()
+            fig, axs = plt.subplots(nrows=3, ncols=2, figsize =(8, 8))             
+            for i in range(u[exp].shape[1]):
+                k = int(i/len(axs[0]))
+                l = i % len(axs[0])
+
+                axs[k,l].plot(tx[exp], u[exp][:,i], color="b", label=f"u({i+1})")
+                axs[k,l].plot(tx[exp], u_approx[exp][:,i], '--', color="r", label=f"u({i+1}) approx.")
+                axs[k,l].legend()
+                axs[k,l].set_xlim(self.xlim)
+
+            axs[0,0].set_ylabel("signal")
+            axs[1,0].set_ylabel("signal")
+            axs[2,0].set_ylabel("signal")
+            axs[2,0].set_xlabel("time [s]")
+            axs[2,1].set_xlabel("time [s]")
+            
+            if self.show_plots:
+                plt.show()
+            if self.save_plots:
+                plt.savefig(os.path.join(self.save_dir, "firstOrderU.pdf"))
+                break
 
     def diffPosition(self):
 
         tx, x, dx, ddx = self.data.get(names=["tx", "x", "dx", "ddx"])
 
-        for exp in self.exps:
-            fig, axs = plt.subplots(nrows=self.x[exp].shape[1], ncols=2, figsize =(8, 8))             
+        for exp in self.data.exps:
+            fig, axs = plt.subplots(nrows=x[exp].shape[1], ncols=2, figsize =(8, 8))             
             for i, ax in enumerate(axs[:,0]):
-                ax.plot(tx[exp], x[exp][:,i], color="b", label="pos")
-                ax.plot(tx[exp], dx[exp][:,i], color="g", label="vel")
-                ax.plot(tx[exp], ddx[exp][:,i], color="r", label="acc")
-                ax.legend()
-                ax.set_title(f"Dimension {i}")
+                if i==0: label = "x"
+                elif i==1: label = "y"
+                elif i==2: label = "theta"
+
+                ax.plot(tx[exp], x[exp][:,i], color="b", label="pos("+label+")")
+                ax.plot(tx[exp], dx[exp][:,i], color="g", label="vel("+label+")")
+                ax.plot(tx[exp], ddx[exp][:,i], color="r", label="acc("+label+")")
+                ax.legend(ncol=2)
+                ax.set_xlim(self.xlim)
 
             # integrate dx and calc. error
             d_error = self._integrate(dx[exp], tx[exp], x[exp][0,:])
@@ -78,12 +122,22 @@ class PlotHolohover():
             dd_error = dd_error - x[exp]
 
             for i, ax in enumerate(axs[:,1]):
-                ax.plot(tx[exp], d_error[:,i], color="g", label="dx error")
-                ax.plot(tx[exp], dd_error[:,i], color="r", label="ddx error")
-                ax.legend()
-                ax.set_title(f"Dimension {i}")                    
+                if i==0: label = "x"
+                elif i==1: label = "y"
+                elif i==2: label = "theta"
 
-            plt.show()
+                ax.plot(tx[exp], d_error[:,i], color="g", label="dx("+label+") error")
+                ax.plot(tx[exp], dd_error[:,i], color="r", label="ddx("+label+") error")
+                ax.legend()
+
+            axs[2,0].set_xlabel("time [s]")
+            axs[2,1].set_xlabel("time [s]")          
+
+            if self.show_plots:
+                plt.show()
+            if self.save_plots:
+                plt.savefig(os.path.join(self.save_dir, "diffPosition.pdf"))
+                break
 
     def uShift(self, total_shift, ddx_u, ddx_u_unshifted, ddx_unshifted):
         """
@@ -95,22 +149,34 @@ class PlotHolohover():
         """
         tx, x, ddx = self.data.get(names=["tx", "x", "ddx"])
 
-        for exp in self.x:
-            fig, axs = plt.subplots(nrows=x[exp].shape[1], ncols=1, figsize =(8, 8))   
+        for exp in self.data.exps:
+            fig, axs = plt.subplots(nrows=x[exp].shape[1], ncols=1, figsize =(8, 11))   
 
             delay_s = total_shift * (tx[exp][-1] - tx[exp][0]) / tx[exp].shape[0]
             
-            fig.suptitle(f'Avg. delay of ddx wrt. control: {np.round(delay_s*1000)}ms ({total_shift} shifts)')
+            fig.suptitle(f'Avg. delay of ddx wrt. control: {np.round(delay_s*1000,1)}ms ({total_shift} shifts)')
             for i, ax in enumerate(axs):               
-                ax.plot(tx[exp], ddx_u[exp][:,i], color="c", label="ddx_u shifted")
-                ax.plot(tx[exp], ddx_u_unshifted[exp][:ddx_u[exp].shape[0],i], '--', color="b", label="ddx_u unshifted")
-                ax.plot(tx[exp], ddx[exp][:,i],  color="r", label="ddx")
-                ax.plot(tx[exp], ddx_unshifted[exp][:ddx_u[exp].shape[0],i], '--', color="g", label="ddx unshifted")
+                ax.plot(tx[exp], ddx_u[exp][:,i], color="c", label="White box model")
+                # ax.plot(tx[exp], ddx_u_unshifted[exp][:ddx_u[exp].shape[0],i], '--', color="b", label="White box (unshifted)")
+                ax.plot(tx[exp], ddx[exp][:,i],  color="r", label="Optitrack")
+                ax.plot(tx[exp], ddx_unshifted[exp][:ddx_u[exp].shape[0],i], '--', color="g", label="Optitrack (not shifted)")
                 ax.legend()
                 error = (1/ddx_u[exp].shape[0]) * np.sum(np.abs(ddx_u[exp][:,i]-ddx[exp][:,i]))
-                unshifted_error = (1/ddx_u[exp].shape[0]) * np.sum(np.abs(ddx_u_unshifted[exp][:ddx_u[exp].shape[0],i]-ddx[exp][:,i]))
-                ax.set_title(f"Dimension {i}, mean error: {np.round(error,3)}, unshifted error: {np.round(unshifted_error,3)}")
-            plt.show()
+                unshifted_error = (1/ddx_u[exp].shape[0]) * np.sum(np.abs(ddx_u[exp][:,i]-ddx_unshifted[exp][:ddx_u[exp].shape[0],i]))
+                ax.set_title(f"Mean abs. error: {np.round(error,3)} (shifted), {np.round(unshifted_error,3)} (not shifted)")
+                ax.set_xlim(self.xlim)
+
+
+            axs[2].set_xlabel("time [s]")
+            axs[0].set_ylabel("dd(x) [m/s^2]") 
+            axs[1].set_ylabel("dd(y) [m/s^2]") 
+            axs[2].set_ylabel("dd(theta) [rad/s^2]") 
+            
+            if self.show_plots:
+                plt.show()
+            if self.save_plots:
+                plt.savefig(os.path.join(self.save_dir, "uShift.pdf"))
+                break
 
     def _integrate(self, dX, tX, X0):
         """

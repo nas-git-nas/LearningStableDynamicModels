@@ -8,6 +8,9 @@ class Data():
     def __init__(self, series_name, crop_data=False, crop_exp=False) -> None:
         # public variables
         self.exps = []
+        self.D = 6
+        self.M = 6
+        self.series_name = series_name
 
         # private varibales
         self._x = {}
@@ -189,24 +192,24 @@ class Data():
         dX = np.empty((0,self.D))
         U = np.empty((0,self.M))
         tX = np.empty((0))
-        for exp in self.tx:
-            Xnew = np.concatenate((self.x[exp], self.dx[exp]), axis=1)
-            dXnew = np.concatenate((self.dx[exp], self.ddx[exp]), axis=1)
+        for exp in self.exps:
+            Xnew = np.concatenate((self._x[exp], self._dx[exp]), axis=1)
+            dXnew = np.concatenate((self._dx[exp], self._ddx[exp]), axis=1)
 
             X = np.concatenate((X, Xnew), axis=0)
             dX = np.concatenate((dX, dXnew), axis=0)
-            U = np.concatenate((U, self.u[exp]), axis=0)
-            tX = np.concatenate((tX, self.tx[exp]), axis=0)
+            U = np.concatenate((U, self._u[exp]), axis=0)
+            tX = np.concatenate((tX, self._tx[exp]), axis=0)
 
         for name in names:
             if name == "state":
-                np.savetxt(os.path.join("experiment", self.series, "data_state.csv"), X, delimiter=",")
+                np.savetxt(os.path.join("experiment", self.series_name, "data_state.csv"), X, delimiter=",")
             if name == "dynamics":
-                np.savetxt(os.path.join("experiment", self.series, "data_dynamics.csv"), dX, delimiter=",")
+                np.savetxt(os.path.join("experiment", self.series_name, "data_dynamics.csv"), dX, delimiter=",")
             if name == "u":
-                np.savetxt(os.path.join("experiment", self.series, "data_input.csv"), U, delimiter=",")
+                np.savetxt(os.path.join("experiment", self.series_name, "data_input.csv"), U, delimiter=",")
             if name == "tx":
-                np.savetxt(os.path.join("experiment", self.series, "data_time.csv"), tX, delimiter=",")
+                np.savetxt(os.path.join("experiment", self.series_name, "data_time.csv"), tX, delimiter=",")
 
     def _loadData(self, series_name, crop_data=False, crop_exp=False):
         """

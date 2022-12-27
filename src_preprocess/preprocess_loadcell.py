@@ -306,8 +306,8 @@ class Loadcell():
 
 
         if plot:
-            self.plot.motorTransZone(fn=fn, fn_thrust=fn_thrust, tf=tf, sgs=sgs, bgs_trans=bgs_trans, ids=ids, means=means, tau=tau, 
-                                        delay=delay, trans=trans, signal_space=signal_space)
+            # self.plot.motorTransZone(fn=fn, fn_thrust=fn_thrust, tf=tf, sgs=sgs, bgs_trans=bgs_trans, ids=ids, means=means, tau=tau, 
+            #                             delay=delay, trans=trans, signal_space=signal_space)
             self.plot.motorTransStat(ids=ids, tau=tau, delay=delay, trans=trans)
 
     def _thrust2signal(self, fn, mot):

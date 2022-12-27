@@ -34,9 +34,6 @@ class PreprocessHolohover():
         for exp in self.data.exps:
 
             # determine time where to cut lower and upper part
-            print(exp)
-            print(tx)
-            print(tu[exp][0])
             lower_time = np.minimum(tx[exp][0], tu[exp][0])
             for i, umax in enumerate(np.max(np.abs(u[exp]), axis=1)):
                 if umax > 0.05:
@@ -86,8 +83,7 @@ class PreprocessHolohover():
             plot_up_u_idx[exp] = upper_u_idx      
 
         if plot:
-            self.plot.cropData(plot_lw_x_idx=plot_lw_x_idx, plot_lw_u_idx=plot_lw_u_idx, 
-                                plot_up_x_idx=plot_up_x_idx, plot_up_u_idx=plot_up_u_idx)
+            self.plot.cropData(plot_lw_x_idx=plot_lw_x_idx, plot_up_x_idx=plot_up_x_idx)
                             
         self.data.set(names=["x", "tx", "u", "tu"], datas=[x, tx, u, tu])       
 
@@ -157,9 +153,9 @@ class PreprocessHolohover():
             dx[exp] = fd._differentiate(x[exp], tx[exp])
             ddx[exp] = fd._differentiate(dx[exp], tx[exp])
 
-        if plot:
-            self.diffPosition()
         self.data.set(names=["dx", "ddx"], datas=[dx, ddx])
+        if plot:
+            self.plot.diffPosition()
     
     def alignData(self, plot=False, verb=True):
         """
