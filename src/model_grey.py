@@ -77,7 +77,8 @@ class HolohoverModelGrey(ModelGrey):
             self.motors_vec.requires_grad = False
 
         # motor positions
-        self.motors_pos = torch.nn.parameter.Parameter(self.initMotorPos(params).detach().clone())
+        self.init_motors_pos = self.initMotorPos(params)
+        self.motors_pos = torch.nn.parameter.Parameter(self.init_motors_pos.detach().clone())
         if args.learn_motors_pos:
             self.motors_pos.requires_grad = True
         else:
@@ -189,6 +190,17 @@ class HolohoverModelGrey(ModelGrey):
             thrust[:,i] = lin_fct(U[:,int(i*deg):int((i+1)*deg)]).flatten()
 
         return thrust
+
+    # def signal2thrust(self, U):
+    #     coeffs = [-1.49934381e-07, 7.57461050e-04, -1.02811399e+00, 4.20587318e+02]
+    #     U = 1000 + 1000*U
+    #     thrust = torch.zeros(U.shape)
+
+    #     for c in coeffs:
+    #         thrust = thrust * U
+    #         thrust = thrust + c
+
+    #     return 0.001 * thrust
 
     def thrust2signal(self, thrust):
         """

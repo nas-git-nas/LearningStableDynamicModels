@@ -230,6 +230,7 @@ class Loadcell():
         
         if plot:
             self.plot.signal2thrust(means=means, stds=stds, ids=ids, coeffs=coeffs)
+            self.plot.signal2thrustAllMotors(coeffs=coeffs)
 
     def thrust2signalCoeff(self, plot=False, verb=True):
         ids, means, stds = self.ids.copy(), self.means.copy(), self.stds.copy()

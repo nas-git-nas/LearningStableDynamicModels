@@ -27,15 +27,15 @@ def loadcell(device):
     pp = Loadcell(data=data, plot=plot, sys=sys, model=model)
     pp.cropData()
     pp.interpolateU(plot=False)
-    pp.locSig(trigger_delay=0.5, plot=True)
+    pp.locSig(trigger_delay=0.5, plot=False)
     pp.calcNorm(plot=False)
     pp.calcMeanNorm(plot=False)
     pp.signal2thrustCoeff(plot=False, verb=False)
     pp.thrust2signalCoeff(plot=False, verb=False)
-    pp.motorTransition(thr_y_final=0.95, plot=False, signal_space=False)
+    pp.motorTransition(thr_y_final=0.95, plot=True, signal_space=True)
 
 def holohover(device):
-    series_name = "holohover_20221208"
+    series_name = "holohover_20221208" #"holohover_20221130"
     crop_data = None
     crop_exp = None
 
@@ -50,7 +50,7 @@ def holohover(device):
 
     pp.cropData(plot=True)
     pp.intermolateU(plot=True)
-    pp.firstOrderU(tau_up=params.tau_up, tau_dw=params.tau_dw, plot=True)
+    # pp.firstOrderU(tau_up=params.tau_up, tau_dw=params.tau_dw, plot=True)
     pp.diffX(plot=True)
     pp.alignData(plot=True)
 
@@ -84,8 +84,8 @@ def main():
         dev = "cpu"
     device = torch.device(dev)
 
-    loadcell(device)
-    # holohover(device=device)
+    # loadcell(device)
+    holohover(device=device)
     # validation(device=device)
 
 if __name__ == "__main__":

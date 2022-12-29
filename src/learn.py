@@ -22,9 +22,7 @@ class Learn():
         self.lossCoeff = []
 
         # logging data
-        self.losses_tr = []
-        self.losses_te = []
-        self.abs_error_te = []
+        self.metrics = { "losses_tr":[], "losses_te":[], "abs_error":[], "rms_error":[], "std_error":[] }
 
     @abstractmethod
     def forward(self, X, U):
@@ -116,12 +114,10 @@ class Learn():
     def optimize(self):
         X_tr, X_te, U_tr, U_te, dX_tr, dX_te = self.getData()
 
-        self.losses_tr = []
-        self.losses_te = []
-        self.abs_error_te = []
+        self.metrics = { "losses_tr":[], "losses_te":[], "abs_error":[], "rms_error":[], "std_error":[] }
         self.evaluate(X_te=X_te, dX_te=dX_te, U_te=U_te)
-        self.losses_tr.append(self.losses_te[0])
-        print(f"Epoch 0: \ttesting loss = {self.losses_te[-1]}, \ttraining loss = {self.losses_tr[-1]}")
+        self.metrics["losses_tr"].append(self.metrics["losses_te"][0])
+        self.printMetrics(epoch=0, elapse_time=0.0)
 
         for j in range(self.args.nb_epochs):
             start_time = time.time()
@@ -147,10 +143,21 @@ class Learn():
                 self.optimizer.step()
                 self.optimizer.zero_grad()
 
-            self.losses_tr.append(np.mean(loss_tr))
+            self.metrics["losses_tr"].append(np.mean(loss_tr))
             self.evaluate(X_te=X_te, dX_te=dX_te, U_te=U_te)
-            print(f"Epoch {j+1}: \telapse time = {np.round(time.time()-start_time,3)}, \ttesting loss = {self.losses_te[-1]}, \
-                    \ttraining loss = {self.losses_tr[-1]}")
+            self.printMetrics(epoch=j+1, elapse_time=time.time()-start_time)
+
+        print(f"motors_vec norm error: {torch.abs(torch.linalg.norm(self.model.motors_vec, dim=1)-torch.ones(self.sys.M)).detach().numpy()}")
+        print(f"motors_pos error: {torch.linalg.norm(self.model.motors_pos-self.model.init_motors_pos, dim=1)}")
+
+    def printMetrics(self, epoch, elapse_time):
+        loss_te = self.metrics["losses_te"][-1]
+        loss_tr = self.metrics["losses_tr"][-1]
+        abs_error = self.metrics["abs_error"][-1][3:6]
+        rms_error = self.metrics["rms_error"][-1][3:6]
+        std_error = self.metrics["std_error"][-1][3:6]
+        print(f"Epoch {epoch}: \telapse time = {np.round(elapse_time,3)}, \ttesting loss = {loss_te}, \ttraining loss = {loss_tr}")
+        print(f"Epoch {epoch}: \tabs error = {np.round(abs_error,4)}, \trms error = {np.round(rms_error,4)}, \tstd error = {np.round(std_error,4)}")
 
     def saveModel(self):
         # save model parameters
@@ -189,6 +196,8 @@ class LearnGreyModel(Learn):
         Out L: average loss of batch X (scalar)
         """
         mse = torch.sum( torch.mean(torch.square(dX_X-dX_real), axis=0) / self.lossCoeff )
+        mse += 10 * torch.linalg.norm(self.model.motors_pos-self.model.init_motors_pos)
+        mse += 0.1 * torch.sum( torch.abs(torch.linalg.norm(self.model.motors_vec, dim=1)-torch.ones(self.sys.M)))
         # print(f"com: {self.model.center_of_mass}")
 
         # if self.args.regularize_center_of_mass:
@@ -209,11 +218,14 @@ class LearnGreyModel(Learn):
             dX_te: testing set dynamics, tensor (N_te,D)
             U_te: testing set control input, tensor (N_te,M)
         """
+        X_te, dX_te, U_te = X_te.detach().clone(), dX_te.detach().clone(), U_te.detach().clone()
         with torch.no_grad():
             dX_X = self.model.forward(X_te, U_te)
 
-        self.losses_te.append(self.lossFunction(dX_X, dX_te).detach().clone().float())
-        self.abs_error_te.append(torch.mean(torch.abs(dX_X - dX_te), axis=0).detach().numpy())
+        self.metrics["losses_te"].append(self.lossFunction(dX_X, dX_te).detach().clone().float())
+        self.metrics["abs_error"].append(torch.mean(torch.abs(dX_X - dX_te), axis=0).detach().numpy())
+        self.metrics["rms_error"].append(torch.sqrt(torch.mean(torch.pow(dX_X - dX_te, 2), axis=0)).detach().numpy())
+        self.metrics["std_error"].append(torch.std(dX_X - dX_te, axis=0).detach().numpy())
 
 class LearnCorrection(Learn):
     def __init__(self, args, dev, system, model, base_model):
@@ -249,11 +261,14 @@ class LearnCorrection(Learn):
             dX_te: testing set dynamics, tensor (N_te,D)
             U_te: testing set control input, tensor (N_te,M)
         """
+        X_te, dX_te, U_te = X_te.detach().clone(), dX_te.detach().clone(), U_te.detach().clone()
         with torch.no_grad():
             dX_pred = self.base_model.forward(X_te, U_te)
             acc_cor = self.model.forward(X=X_te, U=U_te)
             dX_X = torch.concat([torch.zeros(acc_cor.shape), acc_cor], dim=1)
             dX_X = dX_X + dX_pred.detach().clone()
-        self.losses_te.append(self.lossFunction(dX_X, dX_te))
-        self.abs_error_te.append(torch.mean(torch.abs(dX_X - dX_te), axis=0).detach().numpy())    
+        self.metrics["losses_te"].append(self.lossFunction(dX_X, dX_te).detach().clone().float())
+        self.metrics["abs_error"].append(torch.mean(torch.abs(dX_X - dX_te), axis=0).detach().numpy()) 
+        self.metrics["rms_error"].append(torch.sqrt(torch.mean(torch.pow(dX_X - dX_te, 2), axis=0)).detach().numpy())
+        self.metrics["std_error"].append(torch.std(dX_X - dX_te, axis=0).detach().numpy())   
 

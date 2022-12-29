@@ -156,6 +156,25 @@ class PlotLoadcell():
             plt.show()
         plt.savefig(os.path.join(self.save_dir, "signal2thrust.pdf"))
 
+    def signal2thrustAllMotors(self, coeffs):
+        fig, ax = plt.subplots(nrows=1, ncols=1, figsize =(6, 5))
+        # ax.set_title(f"Signal-to-Thrust mapping (degree=3)")
+
+        for i in range(coeffs.shape[0]):
+            # calc. polynomial approximation of thrust
+            x = np.linspace(-0.2, 1.2, 100)
+            thrust_approx = self._polyCurve(x=x, coeff=coeffs[i,1,:])
+            ax.plot(x, thrust_approx, label=f"motor {i+1}")
+
+        ax.legend()
+        ax.set_ylim([-0.05,1])
+        ax.set_xlabel("signal")
+        ax.set_ylabel("thrust [N]")
+        
+        if self.show_plots:
+            plt.show()
+        plt.savefig(os.path.join(self.save_dir, "signal2thrust_allMotors.pdf"))
+
     def thrust2signal(self, means, stds, ids, coeffs):
         fig, axs = plt.subplots(nrows=2, ncols=3, figsize =(12, 8))
         color_map = cm.get_cmap('cool', 12)
@@ -284,9 +303,9 @@ class PlotLoadcell():
 
         axs[0,0].set_title(f"Up delay (mean={np.round(np.nanmean(delay[:,:,0]),3)}s)")
         axs[0,1].set_title(f"Down delay (mean={np.round(np.nanmean(delay[:,:,1]),3)}s)")
-        axs[1,0].set_title(f"Up trans. (mean={np.round(np.nanmean(trans[:,:-2,0]),3)}s)")        
+        axs[1,0].set_title(f"Up trans. (mean={np.round(np.nanmean(trans[:,:,0]),3)}s)")        
         axs[1,1].set_title(f"Down trans. (mean={np.round(np.nanmean(trans[:,:,1]),3)}s)")
-        axs[2,0].set_title(f"Up tau (mean={np.round(np.nanmean(tau[:,:-2,0]),3)}s)")        
+        axs[2,0].set_title(f"Up tau (mean={np.round(np.nanmean(tau[:,:,0]),3)}s)")        
         axs[2,1].set_title(f"Down tau (mean={np.round(np.nanmean(tau[:,:,1]),3)}s)")
         axs[0,0].set_ylabel("time (s)")
         axs[1,0].set_ylabel("time (s)")

@@ -92,6 +92,9 @@ def main():
     plot.greyModel(ueq)
     if args.learn_correction:
         plot.corModel()
+    plot.paramsSig2Thrust()
+    plot.paramsVec()
+    plot.dataHistogram()
 
     # # simulate system
     # sim = Simulation(sys, model)

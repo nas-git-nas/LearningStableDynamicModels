@@ -3,6 +3,7 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+import matplotlib.patches as mpatches
 
 from src.model_grey import HolohoverModelGrey, CorrectModelGrey
 
@@ -24,6 +25,9 @@ class Plot():
         elif args.model_type == "HolohoverGrey":
             self.quiver_scale = 1
 
+        self.frequency = 240
+        self.plot_range = [int(5*self.frequency), int(8*self.frequency)]
+
     def greyModel(self, u_eq):
         # define control input, u_hat is bounded by [-1,1]
         Ueq = u_eq.reshape((1,self.sys.M))
@@ -34,28 +38,31 @@ class Plot():
 
         fig, axs = plt.subplots(nrows=3, ncols=2, figsize =(10, 10))
 
-        self.modelLoss(axs[0,0], losses_tr=self.learn.losses_tr, losses_te=self.learn.losses_te)
-        self.modelError((axs[1,0], axs[2,0]), abs_error_te=self.learn.abs_error_te)
-        self.modelData((axs[0,1],axs[1,1],axs[2,1]), plot_range=(0,600), plot_white=True)
+        self.modelLoss(axs[0,0], losses_tr=self.learn.metrics["losses_tr"], losses_te=self.learn.metrics["losses_te"])
+        self.modelError((axs[1,0], axs[2,0]), abs_error=self.learn.metrics["abs_error"], rms_error=self.learn.metrics["rms_error"])
+        self.modelData((axs[0,1],axs[1,1],axs[2,1]), plot_white=True)
 
-        plt.savefig(os.path.join(self.args.dir_path, "learn_model")) 
+        plt.savefig(os.path.join(self.args.dir_path, "learn_model.pdf")) 
 
     def corModel(self, u_eq=False):
 
         fig, axs = plt.subplots(nrows=3, ncols=2, figsize =(10, 10))
 
-        self.modelLoss(axs[0,0], losses_tr=self.learn_cor.losses_tr, losses_te=self.learn_cor.losses_te)
-        self.modelError((axs[1,0], axs[2,0]), abs_error_te=self.learn_cor.abs_error_te)
-        self.modelData((axs[0,1],axs[1,1],axs[2,1]), plot_range=(0,600), plot_cor=True)
+        self.modelLoss(axs[0,0], losses_tr=self.learn_cor.metrics["losses_tr"], losses_te=self.learn_cor.metrics["losses_te"])
+        self.modelError((axs[1,0], axs[2,0]), abs_error=self.learn_cor.metrics["abs_error"], rms_error=self.learn.metrics["rms_error"])
+        self.modelData((axs[0,1],axs[1,1],axs[2,1]), plot_cor=True)
 
-        plt.savefig(os.path.join(self.args.dir_path, "learn_correction"))   
+        plt.savefig(os.path.join(self.args.dir_path, "learn_correction.pdf"))   
 
 
-    def modelData(self, axs, plot_range, plot_cor=False, plot_white=False):
+    def modelData(self, axs, plot_cor=False, plot_white=False):
         X_data, U_data, dX_data = self.sys.getData()
-        X = X_data[plot_range[0]:plot_range[1],:]
-        U = U_data[plot_range[0]:plot_range[1],:]
-        dX_real = dX_data[plot_range[0]:plot_range[1],:]
+        time = np.arange(X_data.shape[0]) / self.frequency
+
+        X = X_data[self.plot_range[0]:self.plot_range[1],:]
+        U = U_data[self.plot_range[0]:self.plot_range[1],:]
+        dX_real = dX_data[self.plot_range[0]:self.plot_range[1],:]
+        time = time[self.plot_range[0]:self.plot_range[1]]
 
         with torch.no_grad():
             dX_model = self.learn.forward(X, U)
@@ -69,53 +76,57 @@ class Plot():
 
         axs[0].set_title(f"Finale dd(x)")
         axs[0].set_ylabel('[m/s^2]')
-        axs[0].plot(dX_real[:,3], label="real", color="black")
+        axs[0].plot(time, dX_real[:,3], label="real", color="black")
         if plot_white:
-            axs[0].plot(dX_white[:,3], label="white box", color="blue")
-            axs[0].plot(dX_model[:,3], "--", label="grey box", color="cyan")
+            axs[0].plot(time, dX_white[:,3], label="white box", color="blue")
+            axs[0].plot(time, dX_model[:,3], "--", label="grey box", color="cyan")
         if plot_cor:
-            axs[0].plot(dX_model[:,3], label="grey box", color="cyan")
-            axs[0].plot(dX_cor[:,3], "--", label="grey box corr.", color="orange")
+            axs[0].plot(time, dX_model[:,3], label="grey box", color="cyan")
+            axs[0].plot(time, dX_cor[:,3], "--", label="grey box corr.", color="orange")
         axs[0].legend()
 
         axs[1].set_title(f"Finale dd(y)")
         axs[1].set_ylabel('[m/s^2]')
-        axs[1].plot(dX_real[:,4], label="real", color="black")
+        axs[1].plot(time, dX_real[:,4], label="real", color="black")
         if plot_white:
-            axs[1].plot(dX_white[:,4], label="white box", color="blue")
-            axs[1].plot(dX_model[:,4], "--", label="grey box", color="cyan")
+            axs[1].plot(time, dX_white[:,4], label="white box", color="blue")
+            axs[1].plot(time, dX_model[:,4], "--", label="grey box", color="cyan")
         if plot_cor:
-            axs[1].plot(dX_model[:,4], label="grey box", color="cyan")
-            axs[1].plot(dX_cor[:,4], "--", label="grey box corr.", color="orange")
+            axs[1].plot(time, dX_model[:,4], label="grey box", color="cyan")
+            axs[1].plot(time, dX_cor[:,4], "--", label="grey box corr.", color="orange")
         axs[1].legend()
 
         axs[2].set_title(f"Finale dd(theta)")
         axs[2].set_xlabel('time [s]')
         axs[2].set_ylabel('[rad/s^2]')
-        axs[2].plot(dX_real[:,5], label="real", color="black")
+        axs[2].plot(time, dX_real[:,5], label="real", color="black")
         if plot_white:
-            axs[2].plot(dX_white[:,5], label="white box", color="blue")
-            axs[2].plot(dX_model[:,5], "--", label="grey box", color="cyan")
+            axs[2].plot(time, dX_white[:,5], label="white box", color="blue")
+            axs[2].plot(time, dX_model[:,5], "--", label="grey box", color="cyan")
         if plot_cor:
-            axs[2].plot(dX_model[:,5], label="grey box", color="cyan")
-            axs[2].plot(dX_cor[:,5], "--", label="grey box corr.", color="orange")
+            axs[2].plot(time, dX_model[:,5], label="grey box", color="cyan")
+            axs[2].plot(time, dX_cor[:,5], "--", label="grey box corr.", color="orange")
         axs[2].legend()
 
 
 
-    def modelError(self, axs, abs_error_te):
-        abs_error = np.array(abs_error_te)
+    def modelError(self, axs, abs_error, rms_error):
+        abs_error = np.array(abs_error)
+        rms_error = np.array(rms_error)
 
-        axs[0].set_title(f"Mean absolute error")
+        axs[0].set_title(f"Error")
         axs[0].set_ylabel('[m/s^2]')
-        axs[0].plot(abs_error[:,3], label="dd(x)", color="red")
-        axs[0].plot(abs_error[:,4], "--", label="dd(y)", color="red")
+        axs[0].plot(abs_error[:,3], label="abs dd(x)", color="red")
+        axs[0].plot(rms_error[:,3], "--", label="rms dd(x)", color="red")
+        axs[0].plot(abs_error[:,4], label="abs dd(y)", color="orange")
+        axs[0].plot(rms_error[:,4], "--", label="rms dd(y)", color="orange")
         axs[0].legend()
 
-        axs[1].set_title(f"Mean absolute error")
+        axs[1].set_title(f"Error")
         axs[1].set_xlabel('epochs')
         axs[1].set_ylabel('[rad/s^2]')
-        axs[1].plot(abs_error[:,5], label="dd(theta)", color="red")
+        axs[1].plot(abs_error[:,5], label=" abs dd(theta)", color="gold")
+        axs[1].plot(rms_error[:,5], "--", label="rms dd(theta)", color="gold")
         axs[1].legend()
 
 
@@ -169,10 +180,95 @@ class Plot():
 
     #     X_bin_means = np.zeros((nb_bins,3))
     #     for bin in range(nb_bins):
-            
 
 
+    def paramsSig2Thrust(self):
+
+        U = torch.linspace(0, 1, steps=100).reshape(100,1).repeat(1,6)
+        U = self.sys.polyExpandU(U)
+        with torch.no_grad():
+            thrust_learned = self.model.signal2thrust(U=U.detach().clone())
+        thrust_learned = thrust_learned.detach().numpy()
+
+        white_model = HolohoverModelGrey(args=self.args, params=self.params, dev="cpu")
+        with torch.no_grad():
+            thrust_init = white_model.signal2thrust(U=U.detach().clone())
+        thrust_init = thrust_init.detach().numpy()
+
+        U = np.linspace(0, 1, 100)
+        fig, ax = plt.subplots(nrows=1, ncols=1, figsize =(6, 5))
+        colors = ["royalblue", "orange", "green", "red", "darkorchid", "brown"]
+        for i in range(thrust_learned.shape[1]):           
+            ax.plot(U, thrust_learned[:,i], color=colors[i], label=f"Motor {i+1}")
+            ax.plot(U, thrust_init[:,i], "--", color=colors[i])
+        ax.set_ylabel("Thrust [N]")
+        ax.set_xlabel("Signal")
+        ax.legend()
+
+        plt.savefig(os.path.join(self.args.dir_path, "signal2thrust_params.pdf")) 
+
+    def paramsVec(self):
+        pos_learned = self.model.motors_pos.detach().numpy()
+        vec_learned = self.model.motors_vec.detach().numpy()
+
+        white_model = HolohoverModelGrey(args=self.args, params=self.params, dev="cpu")
+        pos_init = white_model.motors_pos.detach().numpy()
+        vec_init = white_model.motors_vec.detach().numpy()
+
+        com_learned = self.model.center_of_mass.detach().numpy()
+        com_init = white_model.center_of_mass.detach().numpy()
         
+        fig, ax = plt.subplots(nrows=1, ncols=1, figsize =(6, 5))
+        circle = plt.Circle((0, 0), 0.06, color='black', alpha=0.2, label="Holohover")
+        ax.add_patch(circle)
+
+        scaling_vec = 0.008
+        vec_learned = vec_learned*scaling_vec
+        vec_init = vec_init*scaling_vec
+        for i in range(pos_init.shape[0]): 
+            arrow =  mpatches.FancyArrow(pos_init[i,0], pos_init[i,1], vec_init[i,0], vec_init[i,1], 
+                                        color="blue", length_includes_head=True)
+            ax.add_patch(arrow)
+            arrow =  mpatches.FancyArrow(pos_learned[i,0], pos_learned[i,1], vec_learned[i,0], vec_learned[i,1], 
+                                        color="green", length_includes_head=True)
+            ax.add_patch(arrow)   
+        
+        ax.scatter(com_init[0], com_init[1], color="blue", label=f"Before learning")
+        ax.scatter(com_learned[0], com_learned[1], color="green", label=f"After learning")
+        ax.legend()
+        ax.set_aspect('equal', 'box')
+        ax.set_ylabel("position [m]")
+        ax.set_xlabel("position [m]")
+        ax.set_xlim([-0.1,0.12])
+        ax.set_ylim([-0.1,0.12])
+        ax.set_xticks([-0.1, -0.05, 0.0, 0.05, 0.1])
+        ax.set_yticks([-0.1, -0.05, 0.0, 0.05, 0.1])
+        plt.savefig(os.path.join(self.args.dir_path, "pos_vec_params.pdf"))
+
+    def dataHistogram(self):
+        X_data, U_data, dX_data = self.sys.getData()
+        X = X_data.detach().numpy()
+        U = U_data.detach().numpy()
+        dX = dX_data.detach().numpy()
+
+        U = np.concatenate([U[:,0]+U[:,1], U[:,2]+U[:,3], U[:,4]+U[:,5]])
+
+        fig, axs = plt.subplots(nrows=2, ncols=2, figsize =(8, 7))
+        fig.suptitle(f"Total nb. samples: {X.shape[0]}")
+        axs[0,0].hist(U, bins=100, label="signal")
+        axs[1,0].hist(dX[:,3], bins=100, label="dd(x)")
+        axs[1,1].hist(dX[:,4], bins=100, label="dd(y)")
+        axs[0,1].hist(dX[:,5], bins=100, label="dd(theta)")
+        axs[0,0].set_xlabel("signal")
+        axs[1,0].set_xlabel("[m/s^2]")
+        axs[1,1].set_xlabel("[m/s^2]")
+        axs[0,1].set_xlabel("[rad/s^2]")
+        axs[0,0].legend()
+        axs[1,0].legend()
+        axs[1,1].legend()
+        axs[0,1].legend()
+        plt.savefig(os.path.join(self.args.dir_path, "histogram.pdf"))
+
 
     def modelGenX(self, xmin, xmax):
         # define range of plot
