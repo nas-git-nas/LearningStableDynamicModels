@@ -8,7 +8,7 @@ from src.params import Params
 from src.system import DHOSystem, CSTRSystem, HolohoverSystem
 from src.model_black import DHOModelBlack, CSTRModelBlack, HolohoverModelBlack
 from src.model_grey import HolohoverModelGrey, CorrectModelGrey
-from src.learn import LearnGreyModel, LearnCorrection
+from src.learn import LearnGreyModel, LearnCorrection, LearnStableModel
 from src.plot import Plot
 from src.simulation import Simulation
 
@@ -22,8 +22,11 @@ def main():
 
     torch.manual_seed(0) # todo: better solution
 
-    args = Args(model_type="HolohoverGrey")
-    params = Params(args=args)
+    # load arguments and parameters
+    args = Args(model_type="CSTR")
+    params = None
+    if args.model_type == "HolohoverGrey":
+        params = Params(args=args)
 
     # create directory
     t = datetime.now()
@@ -56,6 +59,8 @@ def main():
         ueq = sys.uMap(ueq)
 
     # init. model
+    model = None
+    cor_model = None
     if args.model_type == "DHO":
         model = DHOModelBlack(args=args, dev=device, generator=sys, xref=xeq)
     elif args.model_type == "CSTR":       
@@ -71,16 +76,15 @@ def main():
         model.load_state_dict(torch.load(args.model_path))
 
     # init. base learner
-    if args.model_type == "HolohoverGrey":
+    ld = None
+    lc = None
+    if args.model_type == "DHO" or args.model_type == "CSTR":
+        ld = LearnStableModel(args=args, dev=device, system=sys, model=model)
+    elif args.model_type == "HolohoverGrey":
         ld = LearnGreyModel(args=args, dev=device, system=sys, model=model)
-    else:
-        ld = None
+        if args.learn_correction: # init. correction learner
+            lc = LearnCorrection(args=args, dev=dev, system=sys, model=cor_model, base_model=model)
 
-    # init. correction learner
-    if args.learn_correction:
-        lc = LearnCorrection(args=args, dev=dev, system=sys, model=cor_model, base_model=model)
-    else:
-        lc = None
 
     # learn dynamics 
     ld.optimize()  
@@ -89,21 +93,28 @@ def main():
 
     # plot results
     plot = Plot(args=args, params=params, dev=device, model=model, cor_model=cor_model, system=sys, learn=ld, learn_cor=lc)
-    plot.greyModel(ueq)
-    if args.learn_correction:
-        plot.corModel()
-    plot.paramsSig2Thrust()
-    plot.paramsVec()
-    plot.dataHistogram()
+    if args.model_type == "DHO":
+        plot.blackDHO()
+    if args.model_type == "CSTR":
+        plot.blackCSTR()
+    elif args.model_type == "HolohoverGrey":     
+        plot.greyModel(ueq)
+        if args.learn_correction:
+            plot.corModel()
+        plot.paramsSig2Thrust()
+        plot.paramsVec()
+        plot.dataHistogram()
 
     # # simulate system
     # sim = Simulation(sys, model)
     # Xreal_seq, Xreal_integ_seq, Xlearn_seq = sim.simGrey()
     # plot.simGrey(Xreal_seq, Xreal_integ_seq, Xlearn_seq)
 
+    # save model, arguments and parameters
     ld.saveModel()
     args.save()
-    params.save(model)
+    if params:
+        params.save(model)
     
 
 if __name__ == "__main__":

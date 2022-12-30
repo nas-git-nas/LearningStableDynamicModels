@@ -1,17 +1,28 @@
 {
-    "system":
+    "data":
     {
-        "controlled_system": true,
-        "lyapunov_correction": false
+        "load_data": false,
+        "series": "holohover_20221208"
     },
     "learn":
     {
         "load_model": false,
-        "model_path": "models/DHO/20221103_0822/20221103_0822_model",
-        "self.learning_rate": 0.01,
-        "self.nb_epochs": 10,
-        "self.nb_batches": 80,
-        "self.batch_size": 512,
-        "self.testing_share": 0.1
-    }
+        "model_path": "models/HolohoverGrey/20221229_1147_greyBox/HolohoverGrey_model",
+        "learning_rate": 0.0001,
+        "nb_epochs": 200,
+        "nb_batches": 128,
+        "batch_size": 8192,
+        "testing_share": 0.1
+    },
+    "cor_model":
+    {
+        "learn_correction": false,
+        "lr_cor": 0.01
+    },
+    "black_model":
+    {
+        "controlled_system": true,
+        "lyapunov_correction": true,
+        "u_map": false
+    }   
 }

@@ -269,6 +269,34 @@ class Plot():
         axs[0,1].legend()
         plt.savefig(os.path.join(self.args.dir_path, "histogram.pdf"))
 
+    def blackDHO(self):
+        xmin = (-1, -0.75)
+        xmax = (2, 1.0)
+
+        fig, axs = plt.subplots(nrows=3, ncols=2, figsize =(8, 8))
+        self.modelLoss(axs[0,0], losses_tr=self.learn.metrics["losses_tr"], losses_te=self.learn.metrics["losses_te"])
+        self.modelLyap(axs[0,1], xmin=xmin, xmax=xmax, add_title=True, add_xlabel=False, add_ylabel=False)
+        self.modelRealDyn(axs[1,0], xmin=xmin, xmax=xmax, U=0, U_hat=False, add_xlabel=False, add_ylabel=True)
+        self.modelRealDyn(axs[2,0], xmin=xmin, xmax=xmax, U=-0.5, U_hat=False, add_xlabel=True, add_ylabel=True)
+        self.modelLearnedDyn(axs[1,1], xmin=xmin, xmax=xmax, U=0, dim=0, add_xlabel=False, add_ylabel=False)
+        self.modelLearnedDyn(axs[2,1], xmin=xmin, xmax=xmax, U=-0.5, dim=0, add_xlabel=True, add_ylabel=False)
+        plt.savefig(os.path.join(self.args.dir_path, "learned_dynamics.pdf"))
+
+    def blackCSTR(self):
+        xmin = (0.5, 0.0)
+        xmax = (3.5, 2.5)
+        U0 = self.sys.uMap(torch.tensor([35]).reshape(1,1))[0,0]
+        Ueq = self.sys.uMap(torch.tensor([14.19]).reshape(1,1))[0,0]
+
+        fig, axs = plt.subplots(nrows=3, ncols=2, figsize =(8, 10))
+        self.modelLoss(axs[0,0], losses_tr=self.learn.metrics["losses_tr"], losses_te=self.learn.metrics["losses_te"])
+        self.modelLyap(axs[0,1], xmin=xmin, xmax=xmax, add_title=True, add_xlabel=False, add_ylabel=False)
+        self.modelRealDyn(axs[1,0], xmin=xmin, xmax=xmax, U=Ueq, U_hat=True, add_xlabel=False, add_ylabel=True)
+        self.modelRealDyn(axs[2,0], xmin=xmin, xmax=xmax, U=U0, U_hat=True, add_xlabel=True, add_ylabel=True)
+        self.modelLearnedDyn(axs[1,1], xmin=xmin, xmax=xmax, U=Ueq, dim=0, add_xlabel=False, add_ylabel=False)
+        self.modelLearnedDyn(axs[2,1], xmin=xmin, xmax=xmax, U=U0, dim=0, add_xlabel=True, add_ylabel=False)
+        plt.savefig(os.path.join(self.args.dir_path, "learned_dynamics.pdf"))
+
 
     def modelGenX(self, xmin, xmax):
         # define range of plot
@@ -284,7 +312,7 @@ class Plot():
 
         return X.detach().clone(), x0_range, x1_range
 
-    def modelLyap(self, axis, xmin, xmax, add_title=True):
+    def modelLyap(self, axis, xmin, xmax, add_title=True, add_xlabel=True, add_ylabel=True):
 
         X, x0_range, x1_range = self.modelGenX(xmin, xmax)
 
@@ -295,18 +323,19 @@ class Plot():
         X_contour, Y_contour = np.meshgrid(x0_range, x1_range)
         Z_contour = np.array(V.reshape(x1_range.size(0),x0_range.size(0)))
 
-        contours = axis.contour(X_contour, Y_contour, Z_contour, colors='black', label="Lyapunov fct.")
+        contours = axis.contour(X_contour, Y_contour, Z_contour)
         axis.clabel(contours, inline=1, fontsize=10)
-        axis.plot(self.model.Xref[0,0], self.model.Xref[0,1], marker=(5, 1), markeredgecolor="black", markerfacecolor="black")   
-        
+        axis.plot(self.model.Xref[0,0], self.model.Xref[0,1], marker=(5, 1), markeredgecolor="red", markerfacecolor="red")   
+        axis.set_aspect('equal')
+        axis.legend()
+        if add_xlabel:
+            axis.set_xlabel('x[0]')
+        if add_ylabel:
+            axis.set_ylabel('x[1]')
         if add_title:
             axis.set_title('Lyapunov fct. (V)')
-            axis.set_xlabel('x0')
-            axis.set_ylabel('x1')
-            axis.set_aspect('equal')
-            axis.legend()
 
-    def modelCorr(self, axis, xmin, xmax):
+    def modelCorr(self, axis, xmin, xmax, add_xlabel=True, add_ylabel=True):
 
         X, _, _ = self.modelGenX(xmin, xmax)
 
@@ -328,30 +357,58 @@ class Plot():
         axis.quiver(X[:,0], X[:,1], f_X[:,0], f_X[:,1], color="b", scale=self.quiver_scale)
         axis.quiver(X[:,0], X[:,1], f_cor[:,0], f_cor[:,1], color="r", scale=self.quiver_scale)
         axis.set_aspect('equal')
-        axis.set_aspect('equal')
+        if add_xlabel:
+            axis.set_xlabel('x[0]')
+        if add_ylabel:
+            axis.set_ylabel('x[1]')
 
-    def modelRealDyn(self, axis, xmin, xmax, U):
+    def modelRealDyn(self, axis, xmin, xmax, U, U_hat, add_xlabel=True, add_ylabel=True):
 
         X, _, _ = self.modelGenX(xmin, xmax)
-        U = U.repeat(X.shape[0],1)
+        U = torch.tensor([U]).repeat(X.shape[0],1)
 
         # calc. real system dynamics
-        dX_real = self.sys.generateDX(X.cpu(), U.cpu(), U_hat=True)
+        dX_real = self.sys.calcDX(X=X.cpu(), U=U.cpu(), U_hat=U_hat)
 
         # calc. equilibrium point for U
-        x_eq = self.sys.equPoint(U[0], U_hat=True)
+        x_eq = self.sys.equPoint(U[0], U_hat=U_hat)
         x_eq = x_eq.reshape(self.sys.D)
 
         axis.set_title('Real dynamics (U='+str(self.sys.uMapInv(U[0,:]).numpy())+')')
-        axis.set_xlabel('x[0]')
-        axis.set_ylabel('x[1]')
         axis.quiver(X[:,0], X[:,1], dX_real[:,0], dX_real[:,1], scale=self.quiver_scale)
         axis.set_aspect('equal')
         if (x_eq[0]>X[0,0] and x_eq[0]<X[-1,0]) and (x_eq[1]>X[0,1] and x_eq[1]<X[-1,1]):
-            axis.plot(x_eq[0], x_eq[1], marker="o", markeredgecolor="red", markerfacecolor="red")
+            axis.plot(x_eq[0], x_eq[1], marker=(5, 1), color="white", markeredgecolor="red", markerfacecolor="red", label="Equilibrium point")
         rect_training = patches.Rectangle((self.sys.x_min[0],self.sys.x_min[1]), width=(self.sys.x_max[0]-self.sys.x_min[0]), \
                                             height=(self.sys.x_max[1]-self.sys.x_min[1]), facecolor='none', edgecolor="g")     
         axis.add_patch(rect_training)
+        axis.legend()
+        if add_xlabel:
+            axis.set_xlabel('x[0]')
+        if add_ylabel:
+            axis.set_ylabel('x[1]')
+
+    def modelLearnedDyn(self, axis, xmin, xmax, U, dim=0, add_xlabel=True, add_ylabel=True):
+
+        X, _, _ = self.modelGenX(xmin, xmax)
+        U = torch.tensor([U]).repeat(X.shape[0],1)
+
+        # calc. learned system dynamics
+        with torch.no_grad():
+            dX = self.model.forward(X, U)      
+
+        axis.set_title('Learned dynamics (U='+str(self.sys.uMapInv(U[0,:]).numpy())+')')
+        axis.quiver(X[:,dim], X[:,dim+1], dX[:,dim], dX[:,dim+1], scale=self.quiver_scale)
+        axis.set_aspect('equal')
+        rect_training = patches.Rectangle((self.sys.x_min[dim],self.sys.x_min[dim+1]), width=(self.sys.x_max[dim]-self.sys.x_min[dim]), \
+                                            height=(self.sys.x_max[dim+1]-self.sys.x_min[dim+1]), facecolor='none', edgecolor="g", \
+                                            label="Region of learning data")        
+        axis.add_patch(rect_training)
+        axis.legend()
+        if add_xlabel:
+            axis.set_xlabel('x[0]')
+        if add_ylabel:
+            axis.set_ylabel('x[1]')
 
     def modelApproxDyn(self, axis, U, dim=0):
         # approximate dynamics by sampling data in a certain region
@@ -362,23 +419,7 @@ class Plot():
         axis.set_ylabel('x[1]')
         axis.plot(dX[:,dim], dX[:,dim+self.sys.S])
 
-    def modelLearnedDyn(self, axis, xmin, xmax, U, dim=0):
 
-        X, _, _ = self.modelGenX(xmin, xmax)
-        U = U.repeat(X.shape[0],1)
-
-        # calc. learned system dynamics
-        with torch.no_grad():
-            dX = self.model.forward(X, U)      
-
-        axis.set_title('Learned dynamics (U='+str(self.sys.uMapInv(U[0,:]).numpy())+')')
-        axis.set_xlabel('x[0]')
-        axis.set_ylabel('x[1]')
-        axis.quiver(X[:,dim], X[:,dim+self.sys.S], dX[:,dim], dX[:,dim+self.sys.S], scale=self.quiver_scale)
-        axis.set_aspect('equal')
-        rect_training = patches.Rectangle((self.sys.x_min[dim],self.sys.x_min[dim+self.sys.S]), width=(self.sys.x_max[dim]-self.sys.x_min[dim]), \
-                                            height=(self.sys.x_max[dim+self.sys.S]-self.sys.x_min[dim+self.sys.S]), facecolor='none', edgecolor="g")        
-        axis.add_patch(rect_training)
         
 
     def sim(self, X_seq_on, X_seq_off, Udes_seq, Usafe_seq_on, slack_seq_on, V_seq_on):

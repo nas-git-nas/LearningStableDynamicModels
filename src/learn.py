@@ -36,13 +36,18 @@ class Learn():
     def evaluate(self, X_te, dX_te, U_te):
         raise ValueError(f"Function not implemented")
 
+    @abstractmethod
+    def printMetrics(self, epoch, elapse_time):
+        raise ValueError(f"Function not implemented")
+
     def getData(self):
         if self.args.load_data:
             self.sys.loadData()            
         else:
-            self.sys.generateData(self.batch_size*self.nb_batches)
+            self.sys.generateData(self.args.batch_size*self.args.nb_batches)
 
         X_data, U_data, dX_data = self.sys.getData()
+
         self.lossCoeff = torch.std(torch.pow(X_data, 2), axis=0)
         X_tr, X_te, U_tr, U_te, dX_tr, dX_te = self.splitData(X_data, U_data, dX_data)
 
@@ -147,21 +152,58 @@ class Learn():
             self.evaluate(X_te=X_te, dX_te=dX_te, U_te=U_te)
             self.printMetrics(epoch=j+1, elapse_time=time.time()-start_time)
 
-        print(f"motors_vec norm error: {torch.abs(torch.linalg.norm(self.model.motors_vec, dim=1)-torch.ones(self.sys.M)).detach().numpy()}")
-        print(f"motors_pos error: {torch.linalg.norm(self.model.motors_pos-self.model.init_motors_pos, dim=1)}")
-
-    def printMetrics(self, epoch, elapse_time):
-        loss_te = self.metrics["losses_te"][-1]
-        loss_tr = self.metrics["losses_tr"][-1]
-        abs_error = self.metrics["abs_error"][-1][3:6]
-        rms_error = self.metrics["rms_error"][-1][3:6]
-        std_error = self.metrics["std_error"][-1][3:6]
-        print(f"Epoch {epoch}: \telapse time = {np.round(elapse_time,3)}, \ttesting loss = {loss_te}, \ttraining loss = {loss_tr}")
-        print(f"Epoch {epoch}: \tabs error = {np.round(abs_error,4)}, \trms error = {np.round(rms_error,4)}, \tstd error = {np.round(std_error,4)}")
+        # print(f"motors_vec norm error: {torch.abs(torch.linalg.norm(self.model.motors_vec, dim=1)-torch.ones(self.sys.M)).detach().numpy()}")
+        # print(f"motors_pos error: {torch.linalg.norm(self.model.motors_pos-self.model.init_motors_pos, dim=1)}")
 
     def saveModel(self):
         # save model parameters
         torch.save(self.model.state_dict(), os.path.join(self.args.dir_path, self.args.model_type+"_model"))
+
+class LearnStableModel(Learn):
+    def __init__(self, args, dev, system, model):
+        Learn.__init__(self, args=args, dev=dev, system=system, model=model)
+
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=args.learning_rate)
+
+    def forward(self, X, U):
+        dX_X = self.model.forward(X, U)
+        return dX_X
+
+    def lossFunction(self, dX_X, dX_real):
+        """
+        Description: calc. average loss of batch X
+        In dX_X: approx. of system dynamics (b x n)
+        In dX_real: real system dynamics (b x n)
+        Out L: average loss of batch X (scalar)
+        """
+        mse = torch.sum( torch.mean(torch.square(dX_X-dX_real), axis=0) / self.lossCoeff )
+        return mse
+
+    def evaluate(self, X_te, dX_te, U_te):
+        """
+        Evaluation step: calc. loss and abs. error on testing set
+        Args:
+            X_te: testing set state, tensor (N_te,D)
+            dX_te: testing set dynamics, tensor (N_te,D)
+            U_te: testing set control input, tensor (N_te,M)
+        """
+        X_te, dX_te, U_te = X_te.detach().clone(), dX_te.detach().clone(), U_te.detach().clone()
+        with torch.no_grad():
+            dX_X = self.model.forward(X_te, U_te)
+
+        self.metrics["losses_te"].append(self.lossFunction(dX_X, dX_te).detach().clone().float())
+        self.metrics["abs_error"].append(torch.mean(torch.abs(dX_X - dX_te), axis=0).detach().numpy())
+        self.metrics["rms_error"].append(torch.sqrt(torch.mean(torch.pow(dX_X - dX_te, 2), axis=0)).detach().numpy())
+        self.metrics["std_error"].append(torch.std(dX_X - dX_te, axis=0).detach().numpy())
+
+    def printMetrics(self, epoch, elapse_time):
+        loss_te = self.metrics["losses_te"][-1]
+        loss_tr = self.metrics["losses_tr"][-1]
+        abs_error = self.metrics["abs_error"][-1]
+        rms_error = self.metrics["rms_error"][-1]
+        std_error = self.metrics["std_error"][-1]
+        print(f"Epoch {epoch}: \telapse time = {np.round(elapse_time,3)}, \ttesting loss = {loss_te}, \ttraining loss = {loss_tr}")
+        print(f"Epoch {epoch}: \tabs error = {np.round(abs_error,4)}, \trms error = {np.round(rms_error,4)}, \tstd error = {np.round(std_error,4)}")
 
 
 class LearnGreyModel(Learn):
@@ -180,13 +222,6 @@ class LearnGreyModel(Learn):
     def forward(self, X, U):
         dX_X = self.model.forward(X, U)
         return dX_X
-        
-        print(f"Center of mass: {self.model.center_of_mass}, Center of mass init.: {self.model.init_center_of_mass}\n")
-        print(f"Mass: {np.round(self.model.mass[0].detach().numpy(),8)}, Mass init.: {np.round(self.model.init_mass[0].detach().numpy(),8)}\n")
-        print(f"Inertia: {np.round(self.model.inertia[0].detach().numpy(),6)}, Inertia init.: {np.round(self.model.init_inertia[0].detach().numpy(),6)}\n")
-        print(f"Signal2thrust weights: {self.model.tnn_sig2thr_fcts[0].weight}, init. {self.model.init_signal2thrust[0]}\n")
-        print(f"Motor vec: {self.model.motors_vec}, \nMotor vec. init. \n{self.model.init_motors_vec}\n")
-        print(f"Motor pos: {self.model.motors_pos}, \nMotor pos. init. \n{self.model.init_motors_pos}\n")
 
     def lossFunction(self, dX_X, dX_real):
         """
@@ -198,15 +233,6 @@ class LearnGreyModel(Learn):
         mse = torch.sum( torch.mean(torch.square(dX_X-dX_real), axis=0) / self.lossCoeff )
         mse += 10 * torch.linalg.norm(self.model.motors_pos-self.model.init_motors_pos)
         mse += 0.1 * torch.sum( torch.abs(torch.linalg.norm(self.model.motors_vec, dim=1)-torch.ones(self.sys.M)))
-        # print(f"com: {self.model.center_of_mass}")
-
-        # if self.args.regularize_center_of_mass:
-        #     mse += torch.linalg.norm(self.model.center_of_mass-self.model.init_center_of_mass)**2
-
-        # if self.args.regularize_inertia:
-        #     # print(f"inertia: {self.model.inertia[0]}")
-        #     mse += 0.001*torch.abs(self.model.inertia[0]-self.model.init_inertia[0]) / self.model.init_inertia[0]
-
 
         return mse
 
@@ -226,6 +252,15 @@ class LearnGreyModel(Learn):
         self.metrics["abs_error"].append(torch.mean(torch.abs(dX_X - dX_te), axis=0).detach().numpy())
         self.metrics["rms_error"].append(torch.sqrt(torch.mean(torch.pow(dX_X - dX_te, 2), axis=0)).detach().numpy())
         self.metrics["std_error"].append(torch.std(dX_X - dX_te, axis=0).detach().numpy())
+
+    def printMetrics(self, epoch, elapse_time):
+        loss_te = self.metrics["losses_te"][-1]
+        loss_tr = self.metrics["losses_tr"][-1]
+        abs_error = self.metrics["abs_error"][-1][3:6]
+        rms_error = self.metrics["rms_error"][-1][3:6]
+        std_error = self.metrics["std_error"][-1][3:6]
+        print(f"Epoch {epoch}: \telapse time = {np.round(elapse_time,3)}, \ttesting loss = {loss_te}, \ttraining loss = {loss_tr}")
+        print(f"Epoch {epoch}: \tabs error = {np.round(abs_error,4)}, \trms error = {np.round(rms_error,4)}, \tstd error = {np.round(std_error,4)}")
 
 class LearnCorrection(Learn):
     def __init__(self, args, dev, system, model, base_model):

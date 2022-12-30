@@ -53,8 +53,6 @@ class Args():
         self.nb_batches = args["learn"]["nb_batches"]
         self.batch_size = args["learn"]["batch_size"]
         self.testing_share = args["learn"]["testing_share"]
-        self.regularize_center_of_mass = args["learn"]["regularize_center_of_mass"]
-        self.regularize_inertia = args["learn"]["regularize_inertia"]
 
     def save(self):
         args = {}
@@ -84,9 +82,7 @@ class Args():
             "nb_epochs": self.nb_epochs,
             "nb_batches": self.nb_batches,
             "batch_size": self.batch_size,
-            "testing_share": self.testing_share,
-            "regularize_center_of_mass": self.regularize_center_of_mass,
-            "regularize_inertia": self.regularize_inertia
+            "testing_share": self.testing_share
         }
         
         # Serializing json
