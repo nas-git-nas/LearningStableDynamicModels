@@ -1,14 +1,14 @@
-from abc import abstractmethod
 import numpy as np
 import torch
 import torch.nn as nn
 
-from src.args import Args
-
 class ModelGrey(nn.Module):
     def __init__(self, dev):
+        """
+        Args:
+            dev: pytorch device
+        """
         super(ModelGrey, self).__init__()
-
         self.device = dev 
 
         # system parameters
@@ -41,10 +41,14 @@ class ModelGrey(nn.Module):
         return rot_mat
 
 
-
-
 class HolohoverModelGrey(ModelGrey):
     def __init__(self, args, params, dev):
+        """
+        Args:
+            args: argument class instance
+            params: parameter class instance
+            dev: pytorch device
+        """
         ModelGrey.__init__(self, dev)
 
         # Center of mass
@@ -153,34 +157,38 @@ class HolohoverModelGrey(ModelGrey):
 
     def forward(self, X, U):
         """
-        Description: forward pass through main model
-        In X: state input batch (N, D)
-        In U: controll input batch (N, M)
-        Out dX_X: state derivative (N, D)
+        Forward pass through main model
+        Args:
+            X: state input batch (N, D)
+            U: controll input batch (N, M)
+        Returns:
+            dX_X: state derivative (N, D)
         """
-        # ThrustNN: map signal to thrust
-        acc = self.signal2acc(U, X)        
-
-        # state = [x, y, theta, dx, dy, dtheta], dynamics = [dx, dy, dtheta, ddx, ddy, ddtheta], 
-        # acc = [ddx, ddy, ddtheta] -> dynamics[0:3] = state[3:6] and dynamics[3:6] = acc
+        acc = self.signal2acc(U, X)      
         dX_X = torch.concat((X[:,3:6], acc), axis=1)       
-
         return dX_X
 
 
     def signal2acc(self, U, X):
+        """
+        Calc acceleration with current state and control input
+        Args:
+            X: state input batch (N, D)
+            U: controll input batch (N, M)
+        Returns:
+            acc: acceleration (N, S)
+        """
         thrust = self.signal2thrust(U) # (N, M)
         acc = self.thrust2acc(thrust, X) # (N, S)
-
-
-
         return acc
 
     def signal2thrust(self, U):
         """
-        Description: motor signal to motor thrust mapping
-        In U: motor signals batch, tensor (N, M*poly_expand_U)
-        Out thrust: motor thrust, tensor (N, M)
+        Motor signal to motor thrust mapping
+        Args:
+            U: motor signals batch, tensor (N, M*poly_expand_U)
+        Returns:
+            thrust: motor thrust, tensor (N, M)
         """
         assert U.shape[1]%self.M == 0
         deg = int(U.shape[1] / self.M) # degree of polynomial expansion
@@ -191,20 +199,9 @@ class HolohoverModelGrey(ModelGrey):
 
         return thrust
 
-    # def signal2thrust(self, U):
-    #     coeffs = [-1.49934381e-07, 7.57461050e-04, -1.02811399e+00, 4.20587318e+02]
-    #     U = 1000 + 1000*U
-    #     thrust = torch.zeros(U.shape)
-
-    #     for c in coeffs:
-    #         thrust = thrust * U
-    #         thrust = thrust + c
-
-    #     return 0.001 * thrust
-
     def thrust2signal(self, thrust):
         """
-        Description: motor thrust to motor signal mapping
+        Motor thrust to motor signal mapping
         Args:
             thrust: motor thrust, tensor (N, M*poly_expand_U)
         Returns:
@@ -227,7 +224,6 @@ class HolohoverModelGrey(ModelGrey):
         Returns:
             acc: acceleration of holohover [ddx, ddy, ddtheta], tensor (N, S)
         """
-
         # calc. thrust vector for each motor
         thrust_vec = torch.einsum('nm,ms->nms', thrust, self.motors_vec) # (N, M, S)
 
@@ -245,13 +241,16 @@ class HolohoverModelGrey(ModelGrey):
         # calc. acceleration, Fw_sum[0,:] = [Fx, Fy, Fz] and Mb[0,:] = [Mx, My, Mz]
         # holohover moves in a plane -> Fz = Mx = My = 0, also Mz_body = Mz_world
         acc = Fw_sum/self.mass + Mb_sum/self.inertia
-
         return acc
-
 
 
 class CorrectModelGrey(ModelGrey):
     def __init__(self, args, dev):
+        """
+        Args:
+            args: argument class instance
+            dev: pytorch device
+        """
         ModelGrey.__init__(self, dev)
 
         hidden_size = 64
@@ -276,51 +275,31 @@ class CorrectModelGrey(ModelGrey):
                                             for (input, output) in zip(nnt_input_size,output_size)])
 
     def forward(self, X, U):
+        """
+        Forward pass through main model
+        Args:
+            X: state input batch (N, D)
+            U: controll input batch (N, M)
+        Returns:
+            dX_X: state derivative (N, D)
+        """
         acc = torch.zeros(X.shape[0],self.S)
 
-        acc[:,0] = self.forwardAcc(Y=torch.concat([U,X[:,2,np.newaxis]], axis=1), lin_fcts=self.nnx_lin_fcts)
-        acc[:,1] = self.forwardAcc(Y=torch.concat([U,X[:,2,np.newaxis]], axis=1), lin_fcts=self.nny_lin_fcts)
-        acc[:,2] = self.forwardAcc(Y=U, lin_fcts=self.nnt_lin_fcts)
+        acc[:,0] = self.forwardCorr(Y=torch.concat([U,X[:,2,np.newaxis]], axis=1), lin_fcts=self.nnx_lin_fcts)
+        acc[:,1] = self.forwardCorr(Y=torch.concat([U,X[:,2,np.newaxis]], axis=1), lin_fcts=self.nny_lin_fcts)
+        acc[:,2] = self.forwardCorr(Y=U, lin_fcts=self.nnt_lin_fcts)
         
         return acc
 
-    def forwardAcc(self, Y, lin_fcts):
+    def forwardCorr(self, Y, lin_fcts):
+        """
+        Correct acceleration of grey box model
+        Args:
+            Y: control input concatenated with theta, tensor (N,M+1)
+            lin_fcts: list of linear functions to apply, nn.ModuleList
+        """
         for i, lin in enumerate(lin_fcts[0:-1]):
             Y = lin(Y)
             Y = self.tanh(Y)
         
         return lin_fcts[-1](Y).flatten()
-
-
-def main():
-    if torch.cuda.is_available():  
-        dev = "cuda:0" 
-    else:  
-        dev = "cpu"
-    device = torch.device(dev) 
-
-    args = Args(model_type="HolohoverGrey")
-    model = HolohoverModelGrey(args=args, dev=device)
-
-    # U = torch.tensor(  [[1.0, 1.0, 1.0, 0.0 ,0.0 ,0.0, 1.0, 1.0, 1.0, 0.0 ,0.0 ,0.0, 0.0, 0.0, 0.0, 0.0 ,0.0 ,0.0],
-    #                     [1.0, 1.0, 1.0, 0.0 ,0.0 ,0.0, 1.0, 1.0, 1.0, 0.0 ,0.0 ,0.0, 0.0, 0.0, 0.0, 0.0 ,0.0 ,0.0]])
-
-    # # U = torch.tensor(  [[1.0, 1.0, 1.0, 0.0 ,0.0 ,0.0],
-    # #                     [1.0, 1.0, 1.0, 0.0 ,0.0 ,0.0]])
-
-    # thrust = model.signal2thrust(U)
-
-    
-
-    X = torch.tensor(  [[0,0,0,0,0,0],
-                        [0,0,1.0472,0,0,0]])
-    thrust = torch.tensor( [[0.0, 0, 1, 0, 1, 0],
-                            [1.0, 0, 0, 0, 0, 1]])
-    
-    acc = model.thrust2acc(thrust, X)
-    print(thrust)
-    print(acc)
-
-
-if __name__ == "__main__":
-    main()  

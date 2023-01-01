@@ -1,26 +1,25 @@
 import os
 import torch
 import numpy as np
-import matplotlib.pyplot as plt
 import cvxpy as cp
-
-
-if torch.cuda.is_available():  
-    dev = "cuda:0" 
-else:  
-    dev = "cpu"
-device = torch.device(dev)
 
 class Simulation():
     def __init__(self, sys, model):
-        
+        """
+        Args:
+            sys: system class instance
+            model: model class instance
+        """        
         self.sys = sys
-        self.model = model  
+        self.model = model
 
         # simulation params
         self.slack_coeff = 1000
 
     def simGrey(self):
+        """
+        Simulate grey model
+        """
         series = "validation_20221208"
         
         X = np.genfromtxt(os.path.join("experiment", series, "data_state.csv"), delimiter=",")
@@ -37,8 +36,18 @@ class Simulation():
         return Xreal_seq, Xreal_integ_seq, Xlearn_seq
 
 
-    def simRealSys(self, nb_steps, X0, dX_seq, periode=None, tX=None): 
-
+    def simRealSys(self, nb_steps, X0, dX_seq, periode=None, tX=None):
+        """
+        Simulate system using real acceleration
+        Args:
+            nb_steps: number of simulation steps
+            X0: starting state at time step 0, numpy array (D)
+            dX_seq: sequence of real system dynamics, numpy array (nb_steps,D)
+            periode: simulation periode
+            tX: time sequence of control inputs, will be used instead of periode
+        Returns:
+            X_seq: resulting state sequence (nb_steps+1,D)
+        """
         X_seq = np.zeros((nb_steps+1, self.sys.D))
         X_seq[0,:] = X0
 
@@ -152,16 +161,3 @@ class Simulation():
         prob.solve()
         
         return np.array(usafe.value).reshape(self.sys.M), slack.value, V
-
-
-
-def testSafetyFilter():
-    sim = Simulation()
-
-    X = torch.tensor([0, 0]).reshape(1,sim.sys.D) #sim.gen.x_min.reshape(1,sim.gen.D)
-    U = torch.tensor([1]).reshape(1,sim.sys.M) #sim.gen.uMap(torch.tensor(sim.gen.u_min).reshape(1,sim.gen.M))
-    # sim.safetyFilter(X, U)
-    sim.simulation()
-
-if __name__ == "__main__":
-    testSafetyFilter()

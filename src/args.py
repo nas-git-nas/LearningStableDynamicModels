@@ -3,6 +3,11 @@ import json
 
 class Args():
     def __init__(self, model_type) -> None:
+        """
+        Initialization of argument class instance
+        Args:
+            model_type: model type name, str
+        """
         args_path = os.path.join("args", "args_"+model_type+".json")
 
         with open(args_path) as f:
@@ -55,6 +60,9 @@ class Args():
         self.testing_share = args["learn"]["testing_share"]
 
     def save(self):
+        """
+        Save arguments in json file
+        """
         args = {}
         args["data"] = {
             "load_data": self.load_data,

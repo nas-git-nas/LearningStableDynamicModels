@@ -11,7 +11,6 @@ from src_preprocess.plot_loadcell import PlotLoadcell
 from src_preprocess.plot_holohover import PlotHolohover
 
 
-
 def loadcell(device):
     series_name = "signal_20221206" #"signal_20221121"
     crop_data = None
@@ -50,7 +49,7 @@ def holohover(device):
 
     pp.cropData(plot=True)
     pp.intermolateU(plot=True)
-    # pp.firstOrderU(tau_up=params.tau_up, tau_dw=params.tau_dw, plot=True)
+    pp.firstOrderU(tau_up=params.tau_up, tau_dw=params.tau_dw, plot=True)
     pp.diffX(plot=True)
     pp.alignData(plot=True)
 
@@ -74,7 +73,7 @@ def validation(device):
     pp.diffX(plot=False)
     pp.alignData(plot=False)
 
-    # data.saveData()
+    data.saveData()
 
 
 def main():

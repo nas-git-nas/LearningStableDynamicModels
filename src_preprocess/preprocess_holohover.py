@@ -1,23 +1,27 @@
-import os
 import matplotlib.pyplot as plt
 import numpy as np
-from pysindy.differentiation import SINDyDerivative, SmoothedFiniteDifference
+from pysindy.differentiation import SINDyDerivative
 from scipy import interpolate, signal
 import torch
 
 
-
-
 class PreprocessHolohover():
     def __init__(self, data, plot, sys, model) -> None:
+        """
+        Preprocess Holohover experiment data
+        Args:
+            data: Data class instance
+            plot: PlotHolohover class instance
+            sys: system class instance
+            model: model class instance
+        """
         self.D = 6
         self.M = 6
 
         self.data = data
         self.plot = plot
         self.sys = sys
-        self.model = model
-            
+        self.model = model           
 
     def cropData(self, plot=False):
         """
@@ -144,7 +148,6 @@ class PreprocessHolohover():
         """
         tx, x = self.data.get(names=["tx", "x"])
 
-        # fd = SmoothedFiniteDifference(d=1, axis=0, smoother_kws={'window_length': 101})
         fd = SINDyDerivative(d=1, kind="savitzky_golay", left=0.05, right=0.05, order=3) # specify widnow size
 
         dx = {}
@@ -287,24 +290,3 @@ class PreprocessHolohover():
                 plt.show()
 
         return ddx_u     
-
-    # def smoothDDX_U(self, plot=False):
-    #     """
-    #     Args:
-    #         plot: if True plot results
-    #     """
-    #     ddx_u = self.calcDDX_U(x_dict=self.x, dx_dict=self.dx, u_dict=self.u, plot=False)
-
-    #     for exp in self.data.exps:
-    #         ddx_u_smooth = signal.savgol_filter(ddx_u[exp], window_length=55, polyorder=3, axis=0)    
-
-    #         if plot:
-    #             fig, axs = plt.subplots(nrows=self.x[exp].shape[1], ncols=1, figsize =(8, 8))             
-    #             for i, ax in enumerate(axs):
-    #                 ax.plot(self.tx[exp], self.u[exp][:,i], color="b", label="signal")
-    #                 ax.plot(self.tx[exp], ddx_u_smooth[:,i], color="y", label="smoothed ddx estimated")
-    #                 ax.plot(self.tx[exp], self.ddx[exp][:,i],  color="r", label="ddx")
-    #                 ax.plot(self.tx[exp], self.imu_world[exp][:,i],  color="c", label="imu world")
-    #                 ax.legend()
-    #                 ax.set_title(f"Dimension {i}")
-    #             plt.show()

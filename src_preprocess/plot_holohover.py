@@ -96,7 +96,6 @@ class PlotHolohover():
                 break
 
     def diffPosition(self):
-
         tx, x, dx, ddx = self.data.get(names=["tx", "x", "dx", "ddx"])
 
         for exp in self.data.exps:

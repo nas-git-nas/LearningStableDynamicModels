@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import matplotlib.patches as mpatches
 
-from src.model_grey import HolohoverModelGrey, CorrectModelGrey
+from src.model_grey import HolohoverModelGrey
 
 class Plot():
     def __init__(self, args, params, dev, model, cor_model, system, learn, learn_cor) -> None:
@@ -29,18 +29,11 @@ class Plot():
         self.plot_range = [int(5*self.frequency), int(8*self.frequency)]
 
     def greyModel(self, u_eq):
-        # define control input, u_hat is bounded by [-1,1]
-        Ueq = u_eq.reshape((1,self.sys.M))
-        Umax = torch.ones((1,self.sys.M)) 
-
-        xmin = self.sys.x_min - (self.sys.x_max-self.sys.x_min)/4
-        xmax = self.sys.x_max + (self.sys.x_max-self.sys.x_min)/4
-
         fig, axs = plt.subplots(nrows=3, ncols=2, figsize =(10, 10))
 
-        self.modelLoss(axs[0,0], losses_tr=self.learn.metrics["losses_tr"], losses_te=self.learn.metrics["losses_te"])
-        self.modelError((axs[1,0], axs[2,0]), abs_error=self.learn.metrics["abs_error"], rms_error=self.learn.metrics["rms_error"])
-        self.modelData((axs[0,1],axs[1,1],axs[2,1]), plot_white=True)
+        self._modelLoss(axs[0,0], losses_tr=self.learn.metrics["losses_tr"], losses_te=self.learn.metrics["losses_te"])
+        self._modelError((axs[1,0], axs[2,0]), abs_error=self.learn.metrics["abs_error"], rms_error=self.learn.metrics["rms_error"])
+        self._modelData((axs[0,1],axs[1,1],axs[2,1]), plot_white=True)
 
         plt.savefig(os.path.join(self.args.dir_path, "learn_model.pdf")) 
 
@@ -48,139 +41,11 @@ class Plot():
 
         fig, axs = plt.subplots(nrows=3, ncols=2, figsize =(10, 10))
 
-        self.modelLoss(axs[0,0], losses_tr=self.learn_cor.metrics["losses_tr"], losses_te=self.learn_cor.metrics["losses_te"])
-        self.modelError((axs[1,0], axs[2,0]), abs_error=self.learn_cor.metrics["abs_error"], rms_error=self.learn.metrics["rms_error"])
-        self.modelData((axs[0,1],axs[1,1],axs[2,1]), plot_cor=True)
+        self._modelLoss(axs[0,0], losses_tr=self.learn_cor.metrics["losses_tr"], losses_te=self.learn_cor.metrics["losses_te"])
+        self._modelError((axs[1,0], axs[2,0]), abs_error=self.learn_cor.metrics["abs_error"], rms_error=self.learn.metrics["rms_error"])
+        self._modelData((axs[0,1],axs[1,1],axs[2,1]), plot_cor=True)
 
         plt.savefig(os.path.join(self.args.dir_path, "learn_correction.pdf"))   
-
-
-    def modelData(self, axs, plot_cor=False, plot_white=False):
-        X_data, U_data, dX_data = self.sys.getData()
-        time = np.arange(X_data.shape[0]) / self.frequency
-
-        X = X_data[self.plot_range[0]:self.plot_range[1],:]
-        U = U_data[self.plot_range[0]:self.plot_range[1],:]
-        dX_real = dX_data[self.plot_range[0]:self.plot_range[1],:]
-        time = time[self.plot_range[0]:self.plot_range[1]]
-
-        with torch.no_grad():
-            dX_model = self.learn.forward(X, U)
-
-            if plot_cor:
-               dX_cor = self.learn_cor.forward(X, U)
-
-            if plot_white:
-                white_model = HolohoverModelGrey(args=self.args, params=self.params, dev="cpu")
-                dX_white = white_model.forward(X=X, U=U)
-
-        axs[0].set_title(f"Finale dd(x)")
-        axs[0].set_ylabel('[m/s^2]')
-        axs[0].plot(time, dX_real[:,3], label="real", color="black")
-        if plot_white:
-            axs[0].plot(time, dX_white[:,3], label="white box", color="blue")
-            axs[0].plot(time, dX_model[:,3], "--", label="grey box", color="cyan")
-        if plot_cor:
-            axs[0].plot(time, dX_model[:,3], label="grey box", color="cyan")
-            axs[0].plot(time, dX_cor[:,3], "--", label="grey box corr.", color="orange")
-        axs[0].legend()
-
-        axs[1].set_title(f"Finale dd(y)")
-        axs[1].set_ylabel('[m/s^2]')
-        axs[1].plot(time, dX_real[:,4], label="real", color="black")
-        if plot_white:
-            axs[1].plot(time, dX_white[:,4], label="white box", color="blue")
-            axs[1].plot(time, dX_model[:,4], "--", label="grey box", color="cyan")
-        if plot_cor:
-            axs[1].plot(time, dX_model[:,4], label="grey box", color="cyan")
-            axs[1].plot(time, dX_cor[:,4], "--", label="grey box corr.", color="orange")
-        axs[1].legend()
-
-        axs[2].set_title(f"Finale dd(theta)")
-        axs[2].set_xlabel('time [s]')
-        axs[2].set_ylabel('[rad/s^2]')
-        axs[2].plot(time, dX_real[:,5], label="real", color="black")
-        if plot_white:
-            axs[2].plot(time, dX_white[:,5], label="white box", color="blue")
-            axs[2].plot(time, dX_model[:,5], "--", label="grey box", color="cyan")
-        if plot_cor:
-            axs[2].plot(time, dX_model[:,5], label="grey box", color="cyan")
-            axs[2].plot(time, dX_cor[:,5], "--", label="grey box corr.", color="orange")
-        axs[2].legend()
-
-
-
-    def modelError(self, axs, abs_error, rms_error):
-        abs_error = np.array(abs_error)
-        rms_error = np.array(rms_error)
-
-        axs[0].set_title(f"Error")
-        axs[0].set_ylabel('[m/s^2]')
-        axs[0].plot(abs_error[:,3], label="abs dd(x)", color="red")
-        axs[0].plot(rms_error[:,3], "--", label="rms dd(x)", color="red")
-        axs[0].plot(abs_error[:,4], label="abs dd(y)", color="orange")
-        axs[0].plot(rms_error[:,4], "--", label="rms dd(y)", color="orange")
-        axs[0].legend()
-
-        axs[1].set_title(f"Error")
-        axs[1].set_xlabel('epochs')
-        axs[1].set_ylabel('[rad/s^2]')
-        axs[1].plot(abs_error[:,5], label=" abs dd(theta)", color="gold")
-        axs[1].plot(rms_error[:,5], "--", label="rms dd(theta)", color="gold")
-        axs[1].legend()
-
-
-           
-
-    def fakeModel(self, u_eq):
-
-        # define control input, u_hat is bounded by [-1,1]
-        Ueq = u_eq.reshape((1,self.sys.M))
-        Umax = torch.ones((1,self.sys.M)) 
-
-        xmin = self.sys.x_min - (self.sys.x_max-self.sys.x_min)/4
-        xmax = self.sys.x_max + (self.sys.x_max-self.sys.x_min)/4
-
-        fig, axs = plt.subplots(nrows=4, ncols=2, figsize =(10, 18))
-
-        self.modelLoss(axs[0,0])
-        self.modelLoss(axs[0,1], log_scale=True)
-        if self.model.lyapunov_correction:
-            self.modelLyap(axs[1,0], xmin, xmax, add_title=True)
-            self.modelCorr(axs[1,1], xmin, xmax)
-
-        self.modelRealDyn(axs[2,0], xmin, xmax, Ueq)
-        self.modelLearnedDyn(axs[2,1], xmin, xmax, Ueq)
-        if self.model.controlled_system:
-            self.modelRealDyn(axs[3,0], xmin, xmax, Umax)
-            self.modelLearnedDyn(axs[3,1], xmin, xmax, Umax)
-
-        plt.savefig(os.path.join(self.learn.model_dir, self.learn.model_name + "_figure"))
-
-    def modelLoss(self, axis, losses_tr, losses_te, log_scale=False):     
-        axis.set_title(f"Loss")
-        axis.set_ylabel('loss')
-        axis.plot(losses_te, label="testing", color="purple")
-        axis.plot(losses_tr, "--", label="training", color="purple")
-        axis.legend()
-
-        if log_scale:
-            axis.set_yscale("log")
-
-    # def modelCorrection(self):
-    #     X, U, dX_real = self.sys.getData()
-
-    #     with torch.no_grad():
-    #         acc_cor = self.learn_cor.model.forward(X=X, U=U)
-
-    #     nb_bins = 15
-    #     X_bins = np.zeros((X.shape[0],3))
-    #     for i in range(3,6):
-    #         X_bins[:,i] = np.digitize(x=X[:,i], bins=np.linspace(start=np.min(X[:,i]), stop=np.max(X[:,i]), num=nb_bins))
-
-    #     X_bin_means = np.zeros((nb_bins,3))
-    #     for bin in range(nb_bins):
-
 
     def paramsSig2Thrust(self):
 
@@ -274,12 +139,12 @@ class Plot():
         xmax = (2, 1.0)
 
         fig, axs = plt.subplots(nrows=3, ncols=2, figsize =(8, 8))
-        self.modelLoss(axs[0,0], losses_tr=self.learn.metrics["losses_tr"], losses_te=self.learn.metrics["losses_te"])
-        self.modelLyap(axs[0,1], xmin=xmin, xmax=xmax, add_title=True, add_xlabel=False, add_ylabel=False)
-        self.modelRealDyn(axs[1,0], xmin=xmin, xmax=xmax, U=0, U_hat=False, add_xlabel=False, add_ylabel=True)
-        self.modelRealDyn(axs[2,0], xmin=xmin, xmax=xmax, U=-0.5, U_hat=False, add_xlabel=True, add_ylabel=True)
-        self.modelLearnedDyn(axs[1,1], xmin=xmin, xmax=xmax, U=0, dim=0, add_xlabel=False, add_ylabel=False)
-        self.modelLearnedDyn(axs[2,1], xmin=xmin, xmax=xmax, U=-0.5, dim=0, add_xlabel=True, add_ylabel=False)
+        self._modelLoss(axs[0,0], losses_tr=self.learn.metrics["losses_tr"], losses_te=self.learn.metrics["losses_te"])
+        self._modelLyap(axs[0,1], xmin=xmin, xmax=xmax, add_title=True, add_xlabel=False, add_ylabel=False)
+        self._modelRealDyn(axs[1,0], xmin=xmin, xmax=xmax, U=0, U_hat=False, add_xlabel=False, add_ylabel=True)
+        self._modelRealDyn(axs[2,0], xmin=xmin, xmax=xmax, U=-0.5, U_hat=False, add_xlabel=True, add_ylabel=True)
+        self._modelLearnedDyn(axs[1,1], xmin=xmin, xmax=xmax, U=0, dim=0, add_xlabel=False, add_ylabel=False)
+        self._modelLearnedDyn(axs[2,1], xmin=xmin, xmax=xmax, U=-0.5, dim=0, add_xlabel=True, add_ylabel=False)
         plt.savefig(os.path.join(self.args.dir_path, "learned_dynamics.pdf"))
 
     def blackCSTR(self):
@@ -289,16 +154,149 @@ class Plot():
         Ueq = self.sys.uMap(torch.tensor([14.19]).reshape(1,1))[0,0]
 
         fig, axs = plt.subplots(nrows=3, ncols=2, figsize =(8, 10))
-        self.modelLoss(axs[0,0], losses_tr=self.learn.metrics["losses_tr"], losses_te=self.learn.metrics["losses_te"])
-        self.modelLyap(axs[0,1], xmin=xmin, xmax=xmax, add_title=True, add_xlabel=False, add_ylabel=False)
-        self.modelRealDyn(axs[1,0], xmin=xmin, xmax=xmax, U=Ueq, U_hat=True, add_xlabel=False, add_ylabel=True)
-        self.modelRealDyn(axs[2,0], xmin=xmin, xmax=xmax, U=U0, U_hat=True, add_xlabel=True, add_ylabel=True)
-        self.modelLearnedDyn(axs[1,1], xmin=xmin, xmax=xmax, U=Ueq, dim=0, add_xlabel=False, add_ylabel=False)
-        self.modelLearnedDyn(axs[2,1], xmin=xmin, xmax=xmax, U=U0, dim=0, add_xlabel=True, add_ylabel=False)
+        self._modelLoss(axs[0,0], losses_tr=self.learn.metrics["losses_tr"], losses_te=self.learn.metrics["losses_te"])
+        self._modelLyap(axs[0,1], xmin=xmin, xmax=xmax, add_title=True, add_xlabel=False, add_ylabel=False)
+        self._modelRealDyn(axs[1,0], xmin=xmin, xmax=xmax, U=Ueq, U_hat=True, add_xlabel=False, add_ylabel=True)
+        self._modelRealDyn(axs[2,0], xmin=xmin, xmax=xmax, U=U0, U_hat=True, add_xlabel=True, add_ylabel=True)
+        self._modelLearnedDyn(axs[1,1], xmin=xmin, xmax=xmax, U=Ueq, dim=0, add_xlabel=False, add_ylabel=False)
+        self._modelLearnedDyn(axs[2,1], xmin=xmin, xmax=xmax, U=U0, dim=0, add_xlabel=True, add_ylabel=False)
         plt.savefig(os.path.join(self.args.dir_path, "learned_dynamics.pdf"))
 
+    def sim(self, X_seq_on, X_seq_off, Udes_seq, Usafe_seq_on, slack_seq_on, V_seq_on):
+        """
+        Plot simulation
+        Args:
+            X_seq_on: sequence of states when safety filter is on, numpy array (nb_steps+1,D)
+            X_seq_off: sequence of states when safety filter is off, numpy array (nb_steps+1,D)
+            Udes_seq: desired control input sequence (nb_steps,M)
+            Usafe_seq: resulting control input sequence (nb_steps,M)
+            slack_seq_on: resulting slacks used in optimization when safety filter is on (nb_steps)
+        """
+        nb_steps = Udes_seq.shape[0]
 
-    def modelGenX(self, xmin, xmax):
+        fig, axs = plt.subplots(nrows=2, ncols=3, figsize =(9, 9))
+
+        xmin = np.minimum(np.min(X_seq_off, axis=0), np.min(X_seq_on, axis=0))
+        xmax = np.maximum(np.max(X_seq_off, axis=0), np.max(X_seq_on, axis=0))
+        xmin -= (xmax-xmin)/6
+        xmax += (xmax-xmin)/6
+        
+        self._simControlInput(axs[0,0], Udes_seq, Usafe_seq_on)
+        self._simSlack(axs[0,1], slack_seq_on)        
+        self._simTrajectory(axs[1,0], X_seq_off, nb_steps, xmin, xmax, filter_on=False)
+        self._simTrajectory(axs[1,1], X_seq_on, nb_steps, xmin, xmax, filter_on=True)
+        self._modelLyap(axs[1,1], xmin, xmax, add_title=False)
+
+        axs[1,2].set_title(f"V(x) on trajectory")
+        axs[1,2].set_xlabel('V(x)')
+        axs[1,2].set_ylabel('timestep')
+        axs[1,2].plot(V_seq_on)
+        plt.show()
+
+    def simGrey(self, Xreal_seq, Xreal_integ_seq, Xlearn_seq):
+        """
+        Plot simulation
+        Args:
+            
+        """
+        nb_steps = Xreal_seq.shape[0]
+        xmin = np.minimum(np.min(Xreal_seq, axis=0), np.min(Xlearn_seq, axis=0), np.min(Xreal_integ_seq, axis=0))
+        xmax = np.maximum(np.max(Xreal_seq, axis=0), np.max(Xlearn_seq, axis=0), np.max(Xreal_integ_seq, axis=0))
+        xmin -= (xmax-xmin)/6
+        xmax += (xmax-xmin)/6
+
+        fig, axs = plt.subplots(nrows=2, ncols=2, figsize =(9, 9))
+
+        self._modelLoss(axs[0,0])               
+        self._simTrajectory(axs[0,1], Xreal_seq, nb_steps-1, xmin, xmax, title="Real trajectory")
+        self._simTrajectory(axs[1,0], Xreal_integ_seq, nb_steps-1, xmin, xmax, title="Real integrated trajectory")
+        self._simTrajectory(axs[1,1], Xlearn_seq, nb_steps-1, xmin, xmax, title="Learned trajectory")
+
+        plt.savefig(os.path.join(self.learn.model_dir, self.learn.model_name + "_figure_sim"))
+
+    def _modelLoss(self, axis, losses_tr, losses_te, log_scale=False):     
+        axis.set_title(f"Loss")
+        axis.set_ylabel('loss')
+        axis.plot(losses_te, label="testing", color="purple")
+        axis.plot(losses_tr, "--", label="training", color="purple")
+        axis.legend()
+
+        if log_scale:
+            axis.set_yscale("log")
+
+    def _modelData(self, axs, plot_cor=False, plot_white=False):
+        X_data, U_data, dX_data = self.sys.getData()
+        time = np.arange(X_data.shape[0]) / self.frequency
+
+        X = X_data[self.plot_range[0]:self.plot_range[1],:]
+        U = U_data[self.plot_range[0]:self.plot_range[1],:]
+        dX_real = dX_data[self.plot_range[0]:self.plot_range[1],:]
+        time = time[self.plot_range[0]:self.plot_range[1]]
+
+        with torch.no_grad():
+            dX_model = self.learn.forward(X, U)
+
+            if plot_cor:
+               dX_cor = self.learn_cor.forward(X, U)
+
+            if plot_white:
+                white_model = HolohoverModelGrey(args=self.args, params=self.params, dev="cpu")
+                dX_white = white_model.forward(X=X, U=U)
+
+        axs[0].set_title(f"Finale dd(x)")
+        axs[0].set_ylabel('[m/s^2]')
+        axs[0].plot(time, dX_real[:,3], label="real", color="black")
+        if plot_white:
+            axs[0].plot(time, dX_white[:,3], label="white box", color="blue")
+            axs[0].plot(time, dX_model[:,3], "--", label="grey box", color="cyan")
+        if plot_cor:
+            axs[0].plot(time, dX_model[:,3], label="grey box", color="cyan")
+            axs[0].plot(time, dX_cor[:,3], "--", label="grey box corr.", color="orange")
+        axs[0].legend()
+
+        axs[1].set_title(f"Finale dd(y)")
+        axs[1].set_ylabel('[m/s^2]')
+        axs[1].plot(time, dX_real[:,4], label="real", color="black")
+        if plot_white:
+            axs[1].plot(time, dX_white[:,4], label="white box", color="blue")
+            axs[1].plot(time, dX_model[:,4], "--", label="grey box", color="cyan")
+        if plot_cor:
+            axs[1].plot(time, dX_model[:,4], label="grey box", color="cyan")
+            axs[1].plot(time, dX_cor[:,4], "--", label="grey box corr.", color="orange")
+        axs[1].legend()
+
+        axs[2].set_title(f"Finale dd(theta)")
+        axs[2].set_xlabel('time [s]')
+        axs[2].set_ylabel('[rad/s^2]')
+        axs[2].plot(time, dX_real[:,5], label="real", color="black")
+        if plot_white:
+            axs[2].plot(time, dX_white[:,5], label="white box", color="blue")
+            axs[2].plot(time, dX_model[:,5], "--", label="grey box", color="cyan")
+        if plot_cor:
+            axs[2].plot(time, dX_model[:,5], label="grey box", color="cyan")
+            axs[2].plot(time, dX_cor[:,5], "--", label="grey box corr.", color="orange")
+        axs[2].legend()
+
+    def _modelError(self, axs, abs_error, rms_error):
+        abs_error = np.array(abs_error)
+        rms_error = np.array(rms_error)
+
+        axs[0].set_title(f"Error")
+        axs[0].set_ylabel('[m/s^2]')
+        axs[0].plot(abs_error[:,3], label="abs dd(x)", color="red")
+        axs[0].plot(rms_error[:,3], "--", label="rms dd(x)", color="red")
+        axs[0].plot(abs_error[:,4], label="abs dd(y)", color="orange")
+        axs[0].plot(rms_error[:,4], "--", label="rms dd(y)", color="orange")
+        axs[0].legend()
+
+        axs[1].set_title(f"Error")
+        axs[1].set_xlabel('epochs')
+        axs[1].set_ylabel('[rad/s^2]')
+        axs[1].plot(abs_error[:,5], label=" abs dd(theta)", color="gold")
+        axs[1].plot(rms_error[:,5], "--", label="rms dd(theta)", color="gold")
+        axs[1].legend()
+
+    def _modelGenX(self, xmin, xmax):
         # define range of plot
         x0_range = torch.linspace(xmin[0], xmax[0], 20).to(self.device)
         x1_range = torch.linspace(xmin[1], xmax[1], 20).to(self.device)
@@ -312,9 +310,8 @@ class Plot():
 
         return X.detach().clone(), x0_range, x1_range
 
-    def modelLyap(self, axis, xmin, xmax, add_title=True, add_xlabel=True, add_ylabel=True):
-
-        X, x0_range, x1_range = self.modelGenX(xmin, xmax)
+    def _modelLyap(self, axis, xmin, xmax, add_title=True, add_xlabel=True, add_ylabel=True):
+        X, x0_range, x1_range = self._modelGenX(xmin, xmax)
 
         # calc. Lyapunov fct. and lyapunov correction f_cor
         V = self.model.forwardLyapunov(X) # (N)
@@ -335,9 +332,8 @@ class Plot():
         if add_title:
             axis.set_title('Lyapunov fct. (V)')
 
-    def modelCorr(self, axis, xmin, xmax, add_xlabel=True, add_ylabel=True):
-
-        X, _, _ = self.modelGenX(xmin, xmax)
+    def _modelCorr(self, axis, xmin, xmax, add_xlabel=True, add_ylabel=True):
+        X, _, _ = self._modelGenX(xmin, xmax)
 
         # calc. Lyapunov fct. and lyapunov correction f_cor
         f_X = self.model.forwardFNN(X)
@@ -362,9 +358,8 @@ class Plot():
         if add_ylabel:
             axis.set_ylabel('x[1]')
 
-    def modelRealDyn(self, axis, xmin, xmax, U, U_hat, add_xlabel=True, add_ylabel=True):
-
-        X, _, _ = self.modelGenX(xmin, xmax)
+    def _modelRealDyn(self, axis, xmin, xmax, U, U_hat, add_xlabel=True, add_ylabel=True):
+        X, _, _ = self._modelGenX(xmin, xmax)
         U = torch.tensor([U]).repeat(X.shape[0],1)
 
         # calc. real system dynamics
@@ -388,9 +383,8 @@ class Plot():
         if add_ylabel:
             axis.set_ylabel('x[1]')
 
-    def modelLearnedDyn(self, axis, xmin, xmax, U, dim=0, add_xlabel=True, add_ylabel=True):
-
-        X, _, _ = self.modelGenX(xmin, xmax)
+    def _modelLearnedDyn(self, axis, xmin, xmax, U, dim=0, add_xlabel=True, add_ylabel=True):
+        X, _, _ = self._modelGenX(xmin, xmax)
         U = torch.tensor([U]).repeat(X.shape[0],1)
 
         # calc. learned system dynamics
@@ -410,73 +404,7 @@ class Plot():
         if add_ylabel:
             axis.set_ylabel('x[1]')
 
-    def modelApproxDyn(self, axis, U, dim=0):
-        # approximate dynamics by sampling data in a certain region
-        dX = self.sys.sampleX(Udes=U, U_hat=True)
-
-        axis.set_title('Real dynamics (U='+str(self.sys.uMapInv(U[0,:]).numpy())+')')
-        axis.set_xlabel('x[0]')
-        axis.set_ylabel('x[1]')
-        axis.plot(dX[:,dim], dX[:,dim+self.sys.S])
-
-
-        
-
-    def sim(self, X_seq_on, X_seq_off, Udes_seq, Usafe_seq_on, slack_seq_on, V_seq_on):
-        """
-        Plot simulation
-        Args:
-            X_seq_on: sequence of states when safety filter is on, numpy array (nb_steps+1,D)
-            X_seq_off: sequence of states when safety filter is off, numpy array (nb_steps+1,D)
-            Udes_seq: desired control input sequence (nb_steps,M)
-            Usafe_seq: resulting control input sequence (nb_steps,M)
-            slack_seq_on: resulting slacks used in optimization when safety filter is on (nb_steps)
-        """
-        nb_steps = Udes_seq.shape[0]
-
-        fig, axs = plt.subplots(nrows=2, ncols=3, figsize =(9, 9))
-
-        xmin = np.minimum(np.min(X_seq_off, axis=0), np.min(X_seq_on, axis=0))
-        xmax = np.maximum(np.max(X_seq_off, axis=0), np.max(X_seq_on, axis=0))
-        xmin -= (xmax-xmin)/6
-        xmax += (xmax-xmin)/6
-        
-        self.simControlInput(axs[0,0], Udes_seq, Usafe_seq_on)
-        self.simSlack(axs[0,1], slack_seq_on)        
-        self.simTrajectory(axs[1,0], X_seq_off, nb_steps, xmin, xmax, filter_on=False)
-        self.simTrajectory(axs[1,1], X_seq_on, nb_steps, xmin, xmax, filter_on=True)
-        self.modelLyap(axs[1,1], xmin, xmax, add_title=False)
-
-        axs[1,2].set_title(f"V(x) on trajectory")
-        axs[1,2].set_xlabel('V(x)')
-        axs[1,2].set_ylabel('timestep')
-        axs[1,2].plot(V_seq_on)
-
-
-        plt.show()
-
-    def simGrey(self, Xreal_seq, Xreal_integ_seq, Xlearn_seq):
-        """
-        Plot simulation
-        Args:
-            
-        """
-        nb_steps = Xreal_seq.shape[0]
-        xmin = np.minimum(np.min(Xreal_seq, axis=0), np.min(Xlearn_seq, axis=0), np.min(Xreal_integ_seq, axis=0))
-        xmax = np.maximum(np.max(Xreal_seq, axis=0), np.max(Xlearn_seq, axis=0), np.max(Xreal_integ_seq, axis=0))
-        xmin -= (xmax-xmin)/6
-        xmax += (xmax-xmin)/6
-
-        fig, axs = plt.subplots(nrows=2, ncols=2, figsize =(9, 9))
-
-        self.modelLoss(axs[0,0])               
-        self.simTrajectory(axs[0,1], Xreal_seq, nb_steps-1, xmin, xmax, title="Real trajectory")
-        self.simTrajectory(axs[1,0], Xreal_integ_seq, nb_steps-1, xmin, xmax, title="Real integrated trajectory")
-        self.simTrajectory(axs[1,1], Xlearn_seq, nb_steps-1, xmin, xmax, title="Learned trajectory")
-
-        plt.savefig(os.path.join(self.learn.model_dir, self.learn.model_name + "_figure_sim"))
-
-    def simTrajectory(self, axis, X_seq, nb_steps, xmin, xmax, title=False):
+    def _simTrajectory(self, axis, X_seq, nb_steps, xmin, xmax, title=False):
         """
         Plot state sequence
         Args:
@@ -504,7 +432,7 @@ class Plot():
         else:
             axis.set_title(f"Trajectory")
 
-    def simControlInput(self, axis, Udes_seq, Usafe_seq):
+    def _simControlInput(self, axis, Udes_seq, Usafe_seq):
         """
         Plot sequence of control inputs
         Returns:
@@ -520,7 +448,7 @@ class Plot():
         axis.set_ylabel('control input')
         axis.set_title(f"Control sequence")
         
-    def simSlack(self, axis, slack_seq):
+    def _simSlack(self, axis, slack_seq):
         """
         Plot sequence of control inputs
         Returns:

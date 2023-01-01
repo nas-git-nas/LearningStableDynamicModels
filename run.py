@@ -14,13 +14,13 @@ from src.simulation import Simulation
 
 
 def main():
+    # pytorch device and random seed
     if torch.cuda.is_available():  
         dev = "cuda:0" 
     else:  
         dev = "cpu"
     device = torch.device(dev)
-
-    torch.manual_seed(0) # todo: better solution
+    torch.manual_seed(0)
 
     # load arguments and parameters
     args = Args(model_type="CSTR")
@@ -62,11 +62,11 @@ def main():
     model = None
     cor_model = None
     if args.model_type == "DHO":
-        model = DHOModelBlack(args=args, dev=device, generator=sys, xref=xeq)
+        model = DHOModelBlack(args=args, dev=device, system=sys, xref=xeq)
     elif args.model_type == "CSTR":       
-        model = CSTRModelBlack(args=args, dev=device, generator=sys, xref=xeq)
+        model = CSTRModelBlack(args=args, dev=device, system=sys, xref=xeq)
     elif args.model_type == "HolohoverBlack":
-        model = HolohoverModelBlack(args=args, dev=device, generator=sys, xref=xeq)
+        model = HolohoverModelBlack(args=args, dev=device, system=sys, xref=xeq)
     elif args.model_type == "HolohoverGrey":
         model = HolohoverModelGrey(args=args, params=params, dev=device)
         cor_model = CorrectModelGrey(args=args, dev=dev)
@@ -84,7 +84,6 @@ def main():
         ld = LearnGreyModel(args=args, dev=device, system=sys, model=model)
         if args.learn_correction: # init. correction learner
             lc = LearnCorrection(args=args, dev=dev, system=sys, model=cor_model, base_model=model)
-
 
     # learn dynamics 
     ld.optimize()  

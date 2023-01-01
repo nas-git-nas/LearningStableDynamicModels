@@ -1,18 +1,19 @@
 import numpy as np
 import time
 from abc import abstractmethod
-from datetime import datetime
 import os
-import shutil
 import torch
-import matplotlib.pyplot as plt
-
-
-# torch.autograd.set_detect_anomaly(True)
 
 
 class Learn():
     def __init__(self, args, dev, system, model):
+        """
+        Args:
+            args: argument class instance
+            dev: pytorch device
+            system: system class instance
+            model: model class instance
+        """
         self.args = args
         self.device = dev                                    
         self.sys = system
@@ -26,21 +27,31 @@ class Learn():
 
     @abstractmethod
     def forward(self, X, U):
-        raise ValueError(f"Function not implemented")
+        raise Exception(f"Function not implemented")
 
     @abstractmethod
     def lossFunction(self, dX_X, dX_real):
-        raise ValueError(f"Function not implemented")
+        raise Exception(f"Function not implemented")
 
     @abstractmethod
     def evaluate(self, X_te, dX_te, U_te):
-        raise ValueError(f"Function not implemented")
+        raise Exception(f"Function not implemented")
 
     @abstractmethod
     def printMetrics(self, epoch, elapse_time):
-        raise ValueError(f"Function not implemented")
+        raise Exception(f"Function not implemented")
 
     def getData(self):
+        """
+        Gets data from system class instance and splits it into training and testing sets
+        Returns:
+            X_tr: state training set, tensor (N*(1-testing_share),D)
+            X_te: state testing set, tensor (N*testing_share,D)
+            U_tr: control input training set, tensor (N*(1-testing_share),M)
+            U_te: control input testing set, tensor (N*testing_share,M)
+            dX_tr: dynmaics training set, tensor (N*(1-testing_share),D)
+            dX_te: dynmaics testing set, tensor (N*testing_share,D)
+        """
         if self.args.load_data:
             self.sys.loadData()            
         else:
@@ -117,6 +128,9 @@ class Learn():
         yield X[b_range,:], U[b_range,:], dX[b_range,:]
 
     def optimize(self):
+        """
+        Main optimization loop inclusive data loading, training and evaluating
+        """
         X_tr, X_te, U_tr, U_te, dX_tr, dX_te = self.getData()
 
         self.metrics = { "losses_tr":[], "losses_te":[], "abs_error":[], "rms_error":[], "std_error":[] }
@@ -133,17 +147,8 @@ class Learn():
                 dX_X = self.forward(X, U) # (N,D) 
 
                 loss = self.lossFunction(dX_X, dX_real)
-                loss_tr.append(loss.detach().clone().float())
-
-                # loss_v = torch.mean(torch.square(dX_X-dX_real) , axis=0) / self.lossCoeff
-                # print(f"training loss: {loss}, verification: {loss_v}, loss coeff.: {self.lossCoeff}")
-                # tr_abs_error = torch.mean(torch.abs(dX_X - dX_real), axis=0)
-                # print(f"training error: {tr_abs_error}")
-                # plt.plot(dX_X[:,3].detach().numpy(), label="est") 
-                # plt.plot(dX_real[:,3].detach().numpy(), label="real") 
-                # plt.show()               
-
-                # if self.args.learn_center_of_mass or self.args.learn_inertia or self.args.learn_signal2thrust or args.learn_mass:                
+                loss_tr.append(loss.detach().clone().float())             
+             
                 loss.backward()
                 self.optimizer.step()
                 self.optimizer.zero_grad()
@@ -152,29 +157,45 @@ class Learn():
             self.evaluate(X_te=X_te, dX_te=dX_te, U_te=U_te)
             self.printMetrics(epoch=j+1, elapse_time=time.time()-start_time)
 
-        # print(f"motors_vec norm error: {torch.abs(torch.linalg.norm(self.model.motors_vec, dim=1)-torch.ones(self.sys.M)).detach().numpy()}")
-        # print(f"motors_pos error: {torch.linalg.norm(self.model.motors_pos-self.model.init_motors_pos, dim=1)}")
-
     def saveModel(self):
-        # save model parameters
+        """
+        Save model parameters
+        """
         torch.save(self.model.state_dict(), os.path.join(self.args.dir_path, self.args.model_type+"_model"))
 
 class LearnStableModel(Learn):
     def __init__(self, args, dev, system, model):
+        """
+        Args:
+            args: argument class instance
+            dev: pytorch device
+            system: system class instance
+            model: model class instance
+        """
         Learn.__init__(self, args=args, dev=dev, system=system, model=model)
 
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=args.learning_rate)
 
     def forward(self, X, U):
+        """
+        Forward pass through model class instance
+        Args:
+            X: state, tensor (N,D)
+            U: control input, tensor (N,M)
+        Returns:
+            dX: state dynamics, tensor (N,D)
+        """
         dX_X = self.model.forward(X, U)
         return dX_X
 
     def lossFunction(self, dX_X, dX_real):
         """
-        Description: calc. average loss of batch X
-        In dX_X: approx. of system dynamics (b x n)
-        In dX_real: real system dynamics (b x n)
-        Out L: average loss of batch X (scalar)
+        Calc. loss
+        Args:
+            dX_X: approx. of system dynamics, tensor (N,D)
+            dX_real: real system dynamics, tensor (N,D)
+        Returns:
+            mse: average loss of batch X (scalar)
         """
         mse = torch.sum( torch.mean(torch.square(dX_X-dX_real), axis=0) / self.lossCoeff )
         return mse
@@ -197,6 +218,12 @@ class LearnStableModel(Learn):
         self.metrics["std_error"].append(torch.std(dX_X - dX_te, axis=0).detach().numpy())
 
     def printMetrics(self, epoch, elapse_time):
+        """
+        Prints testing and training loss as well as abs. and RMS error
+        Args:
+            epoch: current epoch, int
+            elapse_time: elapse time of epoch, float
+        """
         loss_te = self.metrics["losses_te"][-1]
         loss_tr = self.metrics["losses_tr"][-1]
         abs_error = self.metrics["abs_error"][-1]
@@ -208,6 +235,13 @@ class LearnStableModel(Learn):
 
 class LearnGreyModel(Learn):
     def __init__(self, args, dev, system, model):
+        """
+        Args:
+            args: argument class instance
+            dev: pytorch device
+            system: system class instance
+            model: model class instance
+        """
         Learn.__init__(self, args=args, dev=dev, system=system, model=model)
 
         model_params = [ { 'params':self.model.sig2thr_fcts[i].weight, 'lr':args.lr_signal2thrust } 
@@ -220,15 +254,25 @@ class LearnGreyModel(Learn):
         self.optimizer = torch.optim.Adam(model_params, lr=self.args.learning_rate)
 
     def forward(self, X, U):
+        """
+        Forward pass through model class instance
+        Args:
+            X: state, tensor (N,D)
+            U: control input, tensor (N,M)
+        Returns:
+            dX: state dynamics, tensor (N,D)
+        """
         dX_X = self.model.forward(X, U)
         return dX_X
 
     def lossFunction(self, dX_X, dX_real):
         """
-        Description: calc. average loss of batch X
-        In dX_X: approx. of system dynamics (b x n)
-        In dX_real: real system dynamics (b x n)
-        Out L: average loss of batch X (scalar)
+        Calc. loss
+        Args:
+            dX_X: approx. of system dynamics, tensor (N,D)
+            dX_real: real system dynamics, tensor (N,D)
+        Returns:
+            mse: average loss of batch X (scalar)
         """
         mse = torch.sum( torch.mean(torch.square(dX_X-dX_real), axis=0) / self.lossCoeff )
         mse += 10 * torch.linalg.norm(self.model.motors_pos-self.model.init_motors_pos)
@@ -254,6 +298,12 @@ class LearnGreyModel(Learn):
         self.metrics["std_error"].append(torch.std(dX_X - dX_te, axis=0).detach().numpy())
 
     def printMetrics(self, epoch, elapse_time):
+        """
+        Prints testing and training loss as well as abs. and RMS error
+        Args:
+            epoch: current epoch, int
+            elapse_time: elapse time of epoch, float
+        """
         loss_te = self.metrics["losses_te"][-1]
         loss_tr = self.metrics["losses_tr"][-1]
         abs_error = self.metrics["abs_error"][-1][3:6]
@@ -264,12 +314,27 @@ class LearnGreyModel(Learn):
 
 class LearnCorrection(Learn):
     def __init__(self, args, dev, system, model, base_model):
+        """
+        Args:
+            args: argument class instance
+            dev: pytorch device
+            system: system class instance
+            model: model class instance
+        """
         Learn.__init__(self, args=args, dev=dev, system=system, model=model)
 
         self.base_model = base_model
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=args.lr_cor)
 
     def forward(self, X, U):
+        """
+        Forward pass through model class instance
+        Args:
+            X: state, tensor (N,D)
+            U: control input, tensor (N,M)
+        Returns:
+            dX: state dynamics, tensor (N,D)
+        """
         with torch.no_grad():
             dX_pred = self.base_model.forward(X, U)     
 
@@ -280,10 +345,12 @@ class LearnCorrection(Learn):
 
     def lossFunction(self, dX_X, dX_real):
         """
-        Description: calc. average loss of batch X
-        In dX_X: approx. of system dynamics (b x n)
-        In dX_real: real system dynamics (b x n)
-        Out L: average loss of batch X (scalar)
+        Calc. loss
+        Args:
+            dX_X: approx. of system dynamics, tensor (N,D)
+            dX_real: real system dynamics, tensor (N,D)
+        Returns:
+            mse: average loss of batch X (scalar)
         """
         mse = torch.sum( torch.mean(torch.square(dX_X-dX_real), axis=0) / self.lossCoeff )
         return mse
@@ -305,5 +372,20 @@ class LearnCorrection(Learn):
         self.metrics["losses_te"].append(self.lossFunction(dX_X, dX_te).detach().clone().float())
         self.metrics["abs_error"].append(torch.mean(torch.abs(dX_X - dX_te), axis=0).detach().numpy()) 
         self.metrics["rms_error"].append(torch.sqrt(torch.mean(torch.pow(dX_X - dX_te, 2), axis=0)).detach().numpy())
-        self.metrics["std_error"].append(torch.std(dX_X - dX_te, axis=0).detach().numpy())   
+        self.metrics["std_error"].append(torch.std(dX_X - dX_te, axis=0).detach().numpy())
+
+    def printMetrics(self, epoch, elapse_time):
+        """
+        Prints testing and training loss as well as abs. and RMS error
+        Args:
+            epoch: current epoch, int
+            elapse_time: elapse time of epoch, float
+        """
+        loss_te = self.metrics["losses_te"][-1]
+        loss_tr = self.metrics["losses_tr"][-1]
+        abs_error = self.metrics["abs_error"][-1][3:6]
+        rms_error = self.metrics["rms_error"][-1][3:6]
+        std_error = self.metrics["std_error"][-1][3:6]
+        print(f"Epoch {epoch}: \telapse time = {np.round(elapse_time,3)}, \ttesting loss = {loss_te}, \ttraining loss = {loss_tr}")
+        print(f"Epoch {epoch}: \tabs error = {np.round(abs_error,4)}, \trms error = {np.round(rms_error,4)}, \tstd error = {np.round(std_error,4)}")
 

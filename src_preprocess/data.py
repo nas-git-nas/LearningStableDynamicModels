@@ -2,10 +2,15 @@ import os
 from copy import deepcopy
 import numpy as np
 
-
-
 class Data():
     def __init__(self, series_name, crop_data=False, crop_exp=False) -> None:
+        """
+        Initialization of Data instance
+        Args:
+            series_name: name of experiment series to load, str
+            crop_data: nb. of data points to keep for each experiment, if False then all data is kept, bool or int
+            crop_exp: nb. of experiments to keep, if False then all data is kept, bool or int
+        """
         # public variables
         self.exps = []
         self.D = 6
@@ -155,29 +160,6 @@ class Data():
                     self._f[exp] = self._f[exp][:-shift,:]
                 if name == "tf" and len(self._tf)>0:
                     self._tf[exp] = self._tf[exp][:-shift]
-
-        
-
-    # def shiftUData(self, shift):
-    #     for exp in self.data.exps:
-    #         if shift > 0:
-    #             self.u[exp] = self.u[exp][:-shift,:]
-    #             self.tx[exp] = self.tx[exp][shift:] - self.tx[exp][shift]
-    #             self.x[exp] = self.x[exp][shift:,:]
-    #             self.dx[exp] = self.dx[exp][shift:,:]
-    #             self.ddx[exp] = self.ddx[exp][shift:,:]
-    #             if exp in self.imu_world:
-    #                 self.imu_world[exp] = self.imu_world[exp][shift:,:]
-    #             self.imu_body[exp] = self.imu_body[exp][shift:,:]
-    #         elif shift < 0: 
-    #             self.u[exp] = self.u[exp][-shift:,:]
-    #             self.tx[exp] = self.tx[exp][:shift] 
-    #             self.x[exp] = self.x[exp][:shift,:]
-    #             self.dx[exp] = self.dx[exp][:shift,:]
-    #             self.ddx[exp] = self.ddx[exp][:shift,:]
-    #             if exp in self.imu_world:
-    #                 self.imu_world[exp] = self.imu_world[exp][:shift,:]
-    #             self.imu_body[exp] = self.imu_body[exp][:shift,:]
 
     def save(self, names):
         """

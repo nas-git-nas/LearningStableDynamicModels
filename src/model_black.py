@@ -3,11 +3,19 @@ import torch
 import torch.nn as nn
 
 class ModelBlack(nn.Module):
-    def __init__(self, args, dev, generator, xref):
+    def __init__(self, args, dev, system, xref):
+        """
+        Args:
+            args: argument class instance
+            dev: pytorch device
+            system: system class instance
+            model: model class instance
+            xref: reference or equilibrium position, numpy array (D)
+        """
         super(ModelBlack, self).__init__()
 
         self.device = dev
-        self.sys = generator
+        self.sys = system
 
         # system parameters
         self.controlled_system = args.controlled_system
@@ -27,22 +35,24 @@ class ModelBlack(nn.Module):
 
     @abstractmethod
     def forwardFNN(self, X):
-        pass
+        raise Exception(f"Function not implemented")
 
     @abstractmethod
     def forwardGNN(self, X):
-        pass
+        raise Exception(f"Function not implemented")
 
     @abstractmethod
     def forwardICNN(self, X):
-        pass
+        raise Exception(f"Function not implemented")
 
     def forward(self, X, U):
         """
-        Description: forward pass through main model
-        In X: state input batch (N x D)
-        In U: controll input batch (N X M)
-        Out dX_opt: optimal approx. of state derivative
+        Forward pass through main model
+        Args:
+            X: state input batch (N x D)
+            U: controll input batch (N X M)
+        Returns:
+            dX_opt: optimal approx. of state derivative
         """
         # FNN
         f_X = self.forwardFNN(X) # (N x D)
@@ -71,9 +81,11 @@ class ModelBlack(nn.Module):
 
     def forwardLyapunov(self, X):
         """
-        Description: calc. lyapunov fct. used to correct f_X and ensure stability
-        In X: state input batch (N x D)
-        Out V: lyapunov fct. (N)
+        Calc. lyapunov fct. used to correct f_X and ensure stability
+        Args:
+            X: state input batch (N x D)
+        Returns:
+            V: lyapunov fct. (N)
         """
         self.h_X = self.forwardICNN(X) # (N x 1)
         h_zero = self.forwardICNN(self.Xref) # (1 x 1) 
@@ -85,10 +97,12 @@ class ModelBlack(nn.Module):
 
     def activationLyapunov(self, h_X, h_zero):
         """
-        Description: calc. activation fct. of h(X)-h(0) st. V(x=0)=0 (enforce positive definitness)
-        In h_X: output of ICNN with input X (N x 1)
-        In h_zero: output of ICNN with input 0 (N x 1)
-        Out sigma_lyap: h(X)-h(0) after activation fct. (N)
+        Calc. activation fct. of h(X)-h(0) st. V(x=0)=0 (enforce positive definitness)
+        Args:
+            h_X: output of ICNN with input X (N x 1)
+            h_zero: output of ICNN with input 0 (N x 1)
+        Returns:
+            sigma_lyap: h(X)-h(0) after activation fct. (N)
         """
         h = torch.flatten(h_X) - torch.flatten(h_zero) # (N)
         
@@ -96,9 +110,11 @@ class ModelBlack(nn.Module):
 
     def gradient_lyapunov(self, X):
         """
-        Description: calc. gradient of lyapunov fct. V
-        In X: input batch (N x D)
-        Out dV: gradient of lyapunov fct. V (N x D)
+        Calc. gradient of lyapunov fct. V
+        Args:
+            X: input batch (N x D)
+        Returns:
+            dV: gradient of lyapunov fct. V (N x D)
         """
         # The fct. jacobian from torch.autograde returns a squeezed 4 dimensional matrix where every output dimension is derived
         # by every input dimension [first ouput dimension, second ouput dimension, first input dimension, second input dimension].
@@ -110,12 +126,14 @@ class ModelBlack(nn.Module):
 
     def fCorrection(self, f_X, g_X, V, dV):
         """
-        Description: calc. correction of f_X used to ensure stability
-        In f_X: output of FCNN (N x D)
-        In g_X: output of GCNN (N x D x M)
-        In V: lyapunov fct. (N)
-        In dV: gradient of lyapunov fct. V (N x D)
-        Out f_cor: forrection of f_X (N x D)
+        Calc. correction of f_X used to ensure stability
+        Args:
+            f_X: output of FCNN (N x D)
+            g_X: output of GCNN (N x D x M)
+            V: lyapunov fct. (N)
+            dV: gradient of lyapunov fct. V (N x D)
+        Returns:
+            f_cor: forrection of f_X (N x D)
         """
         stability_conditions = torch.einsum('nd,nd->n', dV, f_X) + self.alpha*V # (N)
         if self.controlled_system:
@@ -126,8 +144,16 @@ class ModelBlack(nn.Module):
         return -torch.einsum('nd,n->nd', dV_norm, self.relu(stability_conditions))
 
 class HolohoverModelBlack(ModelBlack):
-    def __init__(self, args, dev, generator, xref):
-        ModelBlack.__init__(self, args, dev, generator, xref)
+    def __init__(self, args, dev, system, xref):
+        """
+        Args:
+            args: argument class instance
+            dev: pytorch device
+            system: system class instance
+            model: model class instance
+            xref: reference or equilibrium position, numpy array (D)
+        """
+        ModelBlack.__init__(self, args, dev, system, xref)
 
         # system parameters
         self.epsilon = 0.00001
@@ -171,8 +197,16 @@ class HolohoverModelBlack(ModelBlack):
 
 
 class CSTRModelBlack(ModelBlack):
-    def __init__(self, args, dev, generator, xref):
-        ModelBlack.__init__(self, args, dev, generator, xref)
+    def __init__(self, args, dev, system, xref):
+        """
+        Args:
+            args: argument class instance
+            dev: pytorch device
+            system: system class instance
+            model: model class instance
+            xref: reference or equilibrium position, numpy array (D)
+        """
+        ModelBlack.__init__(self, args, dev, system, xref)
 
         # system parameters
         self.epsilon = 0.00001
@@ -216,9 +250,11 @@ class CSTRModelBlack(ModelBlack):
 
     def forwardFNN(self, X):
         """
-        Description: forward pass through FNN
-        In X: state input batch (N x D)
-        Out f_X: output of FCNN (N x D)
+        Forward pass through FNN
+        Args:
+            X: state input batch (N x D)
+        Returns:
+            f_X: output of FCNN (N x D)
         """
         x_fnn_fc1 = self.fnn_fc1(X)
         x_fnn_tanh1 = self.tanh(x_fnn_fc1)
@@ -231,18 +267,22 @@ class CSTRModelBlack(ModelBlack):
 
     def forwardGNN(self, X):
         """
-        Description: forward pass through GNN
-        In X: state input batch (N x D)
-        Out g_X: output of GCNN (N x D x M)
+        Forward pass through GNN
+        Args:
+            X: state input batch (N x D)
+        Returns:
+            g_X: output of GCNN (N x D x M)
         """
         g_X = self.gnn_fc1(X)
         return g_X.reshape([X.shape[0], self.D, self.M])
 
     def forwardICNN(self, X):
         """
-        Description: pass through ICNN (input convex neural network)
-        In X: state input batch (N x D)
-        Out h_X: output of ICNN (N x 1)
+        Pass through ICNN (input convex neural network)
+        Args:
+            X: state input batch (N x D)
+        Returns:
+            h_X: output of ICNN (N x 1)
         """
         x_icnn_fc1 = self.icnn_fc1(X)
         x_icnn_sp1 = self.sp(x_icnn_fc1)
@@ -262,8 +302,16 @@ class CSTRModelBlack(ModelBlack):
 
 
 class DHOModelBlack(ModelBlack):
-    def __init__(self, args, dev, generator, xref):
-        ModelBlack.__init__(self, args, dev, generator, xref)
+    def __init__(self, args, dev, system, xref):
+        """
+        Args:
+            args: argument class instance
+            dev: pytorch device
+            system: system class instance
+            model: model class instance
+            xref: reference or equilibrium position, numpy array (D)
+        """
+        ModelBlack.__init__(self, args, dev, system, xref)
         # system parameters
         self.epsilon = 0.01
         self.alpha = 0.1
@@ -301,27 +349,33 @@ class DHOModelBlack(ModelBlack):
 
     def forwardFNN(self, X):
         """
-        Description: forward pass through FNN
-        In X: state input batch (N x D)
-        Out f_X: output of FCNN (N x D)
+        Forward pass through FNN
+        Args:
+            X: state input batch (N x D)
+        Returns:
+            f_X: output of FCNN (N x D)
         """
         f_X = self.fnn_fc1(X)
         return f_X
 
     def forwardGNN(self, X):
         """
-        Description: forward pass through GNN
-        In X: state input batch (N x D)
-        Out g_X: output of GCNN (N x D x M)
+        Forward pass through GNN
+        Args:
+            X: state input batch (N x D)
+        Returns:
+            g_X: output of GCNN (N x D x M)
         """
         g_X = self.gnn_fc1(X) 
         return g_X.reshape([X.shape[0], self.D, self.M])
 
     def forwardICNN(self, X):
         """
-        Description: pass through ICNN (input convex neural network)
-        In X: state input batch (N x D)
-        Out h_X: output of ICNN (N x 1)
+        Pass through ICNN (input convex neural network)
+        Args:
+            X: state input batch (N x D)
+        Returns:
+            h_X: output of ICNN (N x 1)
         """
         x_icnn_fc1 = self.icnn_fc1(X)
         x_icnn_sp1 = self.sp(x_icnn_fc1)

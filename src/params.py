@@ -1,10 +1,14 @@
 import os
 import json
 import jsbeautifier
-import numpy as np
 
 class Params():
     def __init__(self, args) -> None:
+        """
+        Initialization of parameter class instance
+        Args:
+            args: argument class instance
+        """
         self.args = args
         params_path = os.path.join("params", "params_"+self.args.model_type+".json")
 
@@ -36,6 +40,9 @@ class Params():
             self.tau_dw = params["model"]["tau_dw"]
 
     def save(self, model):
+        """
+        Save parameters in json file
+        """
         params = {}
         if self.args.model_type == "HolohoverGrey" or self.args.model_type == "Signal2Thrust":
             params["model"] = {  

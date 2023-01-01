@@ -1,13 +1,12 @@
 import matplotlib.pyplot as plt
 from matplotlib import cm
 from matplotlib.gridspec import GridSpec
-from matplotlib.ticker import FormatStrFormatter
 from brokenaxes import brokenaxes
 import numpy as np
 from scipy import stats
 import os
 
-from src_preprocess.functions import polyFct2, polyFct3, polyFct4, polyFct5, expRise, expFall
+from src_preprocess.functions import expRise, expFall
 
 class PlotLoadcell():
     def __init__(self, data, show_plots, save_dir) -> None:
@@ -158,7 +157,6 @@ class PlotLoadcell():
 
     def signal2thrustAllMotors(self, coeffs):
         fig, ax = plt.subplots(nrows=1, ncols=1, figsize =(6, 5))
-        # ax.set_title(f"Signal-to-Thrust mapping (degree=3)")
 
         for i in range(coeffs.shape[0]):
             # calc. polynomial approximation of thrust
@@ -239,14 +237,6 @@ class PlotLoadcell():
                 bax.plot(tf[bgs_trans[i,j,0]:bgs_trans[i,j,2]]-tf[sgs[i,j,0]], fn[bgs_trans[i,j,0]:bgs_trans[i,j,2]], color="b")
                 bax.set_ylim([0,np.max(fn)])
 
-                # bax.set_title(f"Signal: {ids[i,j,1]}")
-                # bax.axs[0].xaxis.set_major_formatter(FormatStrFormatter('%.1f'))
-                # locs = bax.axs[0].get_xticks()
-                # bax.axs[0].set_xticks(np.array([]))
-                # bax.axs[1].xaxis.set_major_formatter(FormatStrFormatter('%.1f'))
-                # locs = bax.axs[1].get_xticks()
-                # bax.axs[1].set_xticks(np.array([]))
-
                 if signal_space:
                     if l == 0: bax.set_ylabel("signal")
                 else:
@@ -285,7 +275,6 @@ class PlotLoadcell():
             plt.savefig(os.path.join(self.save_dir, "transZone_motor"+str(i+1)+".pdf"))
 
     def motorTransStat(self, ids, tau, delay, trans):
-
         # delay[3,4,0] = np.nan
         # trans[3,4,0] = np.nan
         # tau[3,4,0] = np.nan

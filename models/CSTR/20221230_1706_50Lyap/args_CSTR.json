@@ -1,0 +1,19 @@
+{
+    "data": {
+        "load_data": false,
+        "series": "holohover_20221208"
+    },
+    "black_model": {
+        "controlled_system": true,
+        "lyapunov_correction": true
+    },
+    "learn": {
+        "load_model": true,
+        "model_path": "models/CSTR/20221230_1633_prelearning/CSTR_model",
+        "learning_rate": 1e-05,
+        "nb_epochs": 50,
+        "nb_batches": 128,
+        "batch_size": 8192,
+        "testing_share": 0.1
+    }
+}

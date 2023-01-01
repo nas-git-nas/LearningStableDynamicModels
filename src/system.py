@@ -5,7 +5,11 @@ import torch
 
 class System:
     def __init__(self, args, dev):
-
+        """
+        Args:
+            args: argument class instance
+            dev: pytorch device
+        """
         self.args = args
         self.device = dev
 
@@ -24,21 +28,25 @@ class System:
 
     @abstractmethod
     def generateX(self, N):
-        pass
+        raise Exception(f"Function not implemented")
 
     @abstractmethod
     def calcDX(self, X, U, U_hat=False):
-        pass
+        raise Exception(f"Function not implemented")
 
     @abstractmethod
     def equPointCalc(self, U):
-        pass
+        raise Exception(f"Function not implemented")
 
     @abstractmethod
     def hessian(self, x, u):
-        pass
+        raise Exception(f"Function not implemented")
 
     def getData(self):
+        """
+        Get loaded or generated data. Map control input to U_hat if necessary 
+        and polynomial expand U if desired.
+        """
         U = self.U.detach().clone()
         if self.args.u_map:
             U = self.uMap(U)
@@ -62,7 +70,7 @@ class System:
 
     def generateData(self, nb_data):
         """
-        Description: generate data
+        Generate data
         Args:
             nb_data: number of data samples to generate
         """
@@ -122,7 +130,6 @@ class System:
 
         return Upoly.flatten(start_dim=1, end_dim=2)
 
-
     def equPoint(self, U, U_hat=False):
         """
         Calc. equilibrium points of system an verify if it is stable
@@ -130,10 +137,9 @@ class System:
             U: control input (M)
             U_hat: if true then controll input is mapped from [-1,1] to [self.u_min,self.u_max]
         Returns:
-            closest_equ_point: tensor with the closest equilibrium point to the range of X (2)
-        """
-        # convert U_hat to U
-        if U_hat:
+            closest_equ_point: tensor with the closest equilibrium point to the range of X, numpy array (D)
+        """     
+        if U_hat: # convert U_hat to U
             U = self.uMapInv(U)
 
         equ_points = self.equPointCalc(U)
@@ -144,7 +150,8 @@ class System:
 
     def equPointStab(self, equ_points, U):
         """
-        Verify if point is stable equilibrium, stable iff all eigenvalues of hessian are > 0 (positive semi-definite hessian)
+        Verify if point is stable equilibrium, stable iff all eigenvalues of hessian are > 0 
+        (positive semi-definite hessian)
         Args:
             equ_points: tensor with all the equilibrium points (4,2)
             U: control input (M)
@@ -204,6 +211,11 @@ class System:
 
 class HolohoverSystem(System):
     def __init__(self, args, dev):
+        """
+        Args:
+            args: argument class instance
+            dev: pytorch device
+        """
         System.__init__(self, args, dev)
         # system dimensions
         self.D = 6 # number of state dimensions
@@ -219,57 +231,13 @@ class HolohoverSystem(System):
         # experiment
         self.series = args.series
 
-    # def sampleX(self, Udes, nb_samples=100, x_error_proc=0.05, u_error_proc=0.2, U_hat=False):
-
-    #     if U_hat:
-    #         Udes = self.uMapInv(Udes)
-
-    #     X = self.X.detach().clone().cpu().numpy()
-    #     dX = self.dX.detach().clone().cpu().numpy()
-    #     U = self.U.detach().clone().cpu().numpy()
-    #     Udes = Udes.flatten().detach().clone().cpu().numpy()
-
-    #     u_max = np.max(U, axis=0)
-    #     u_min = np.min(U, axis=0)
-    #     u_error = (u_max-u_min)*u_error_proc
-
-    #     # choose samples that have Udes +- u_error (error margin)
-    #     indices = np.ones(X.shape[0], dtype=bool)
-    #     for i in range(self.M):
-    #         indices = indices & ((Udes[i]-u_error[i])<U[:,i]) & (U[:,i]<(Udes[i]+u_error[i]))
-    #     X = X[np.where(indices)]
-    #     dX = dX[np.where(indices)]
-
-    #     x_max = np.max(X, axis=0)
-    #     x_min = np.min(X, axis=0)
-    #     x_error = (x_max-x_min)*x_error_proc
-
-    #     # sample X
-    #     dX_samples = np.empty((nb_samples, self.D)) * np.nan
-    #     for i in range(self.S):
-    #         x_lins = np.linspace(x_min[i+self.S], x_max[i+self.S], nb_samples)
-    #         for j, x_lin in enumerate(x_lins):
-    #             # choose samples that have [x, y, or theta] +- error margin
-    #             # x_error = (x_max-x_min)*x_error_proc
-    #             # while True:
-    #             #     samples = np.where(  ((x_lin-x_error[i+self.S])<=X[:,i+self.S]) 
-    #             #                         & (X[:,i+self.S]<=(x_lin+x_error[i+self.S])))
-    #             #     if len(samples[0]) > 0:
-    #             #         break
-    #             #     else:
-    #             #         x_error = (1+x_error_proc)*x_error
-
-    #             # calc. average over all samples which are close enough to x_lin
-    #             samples = np.where(  ((x_lin-x_error[i+self.S])<=X[:,i+self.S]) 
-    #                                     & (X[:,i+self.S]<=(x_lin+x_error[i+self.S])))
-    #             if len(samples[0])>10:
-    #                 dX_samples[j,i] = np.mean(dX[samples][:,i])
-    #                 dX_samples[j,i+self.S] = np.mean(dX[samples][:,i+self.S])
-
-    #     return dX_samples[~np.isnan(dX_samples).any(axis=1)]
-
 class CSTRSystem(System):
     def __init__(self, args, dev):
+        """
+        Args:
+            args: argument class instance
+            dev: pytorch device
+        """
         System.__init__(self, args, dev)
         # system dimensions
         self.D = 2 # number of state dimensions
@@ -290,10 +258,12 @@ class CSTRSystem(System):
 
     def calcDX(self, X, U, U_hat=False):
         """
-        Description: calc. derivative of X
-        In X: batch of sample data (N x D)
-        In U: controll input data (N x M)
-        Out dX: derivative of X (N x D)
+        Calc. derivative of X
+        Args:
+            X: batch of sample data (N x D)
+            U: controll input data (N x M)
+        Returns:
+            dX: derivative of X (N x D)
         """
         if U_hat:
             U = self.uMapInv(U)
@@ -301,7 +271,6 @@ class CSTRSystem(System):
         dX = torch.zeros(X.shape)
         dX[:,0] = (1/self.TIMEUNITS_PER_HOUR)*(U[:,0]*(self.cA0 - X[:,0])-self.phi1*X[:,0]-self.phi3*torch.pow(X[:,0], 2))
         dX[:,1] = (1/self.TIMEUNITS_PER_HOUR)*(-U[:,0]*X[:,1]+self.phi1*X[:,0]-self.phi2*X[:,1])
-
         return dX
 
     def equPointCalc(self, U):
@@ -342,6 +311,11 @@ class CSTRSystem(System):
 
 class DHOSystem(System):
     def __init__(self, args, dev):
+        """
+        Args:
+            args: argument class instance
+            dev: pytorch device
+        """
         System.__init__(self, args, dev)
 
         # system dimensions
@@ -361,10 +335,12 @@ class DHOSystem(System):
 
     def calcDX(self, X, U, U_hat=False):
         """
-        Description: calc. derivative of X
-        In X: batch of sample data (N x D)
-        In U: controll input data (N x M)
-        Out dX: derivative of X (N x D)
+        Calc. derivative of X
+        Args:
+            X: batch of sample data (N x D)
+            U: controll input data (N x M)
+        Returns:
+            dX: derivative of X (N x D)
         """
         if U_hat:
             U = self.uMapInv(U)
@@ -399,6 +375,7 @@ class DHOSystem(System):
         return hess
 
 
+
 def test_oscillator():
     if torch.cuda.is_available():  
         dev = "cuda:0" 
@@ -423,4 +400,5 @@ def testPolyExpandU():
 
 if __name__ == "__main__":
     # test_oscillator()
-    testPolyExpandU()
+    # testPolyExpandU()
+    pass
