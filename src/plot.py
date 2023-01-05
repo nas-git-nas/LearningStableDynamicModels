@@ -5,6 +5,9 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import matplotlib.patches as mpatches
 
+from src.args import Args
+from src.params import Params
+from src.system import HolohoverSystem
 from src.model_grey import HolohoverModelGrey
 
 class Plot():
@@ -33,7 +36,16 @@ class Plot():
 
         self._modelLoss(axs[0,0], losses_tr=self.learn.metrics["losses_tr"], losses_te=self.learn.metrics["losses_te"])
         self._modelError((axs[1,0], axs[2,0]), abs_error=self.learn.metrics["abs_error"], rms_error=self.learn.metrics["rms_error"])
-        self._modelData((axs[0,1],axs[1,1],axs[2,1]), plot_white=True)
+        self._modelData((axs[0,1],axs[1,1],axs[2,1]), model_name="grey box", plot_white=True)
+
+        plt.savefig(os.path.join(self.args.dir_path, "learn_model.pdf")) 
+
+    def blackModel(self, u_eq):
+        fig, axs = plt.subplots(nrows=3, ncols=2, figsize =(10, 10))
+
+        self._modelLoss(axs[0,0], losses_tr=self.learn.metrics["losses_tr"], losses_te=self.learn.metrics["losses_te"])
+        self._modelError((axs[1,0], axs[2,0]), abs_error=self.learn.metrics["abs_error"], rms_error=self.learn.metrics["rms_error"])
+        self._modelData((axs[0,1],axs[1,1],axs[2,1]), model_name="black box", plot_white=True)
 
         plt.savefig(os.path.join(self.args.dir_path, "learn_model.pdf")) 
 
@@ -43,7 +55,7 @@ class Plot():
 
         self._modelLoss(axs[0,0], losses_tr=self.learn_cor.metrics["losses_tr"], losses_te=self.learn_cor.metrics["losses_te"])
         self._modelError((axs[1,0], axs[2,0]), abs_error=self.learn_cor.metrics["abs_error"], rms_error=self.learn.metrics["rms_error"])
-        self._modelData((axs[0,1],axs[1,1],axs[2,1]), plot_cor=True)
+        self._modelData((axs[0,1],axs[1,1],axs[2,1]), model_name="grey box", plot_cor=True)
 
         plt.savefig(os.path.join(self.args.dir_path, "learn_correction.pdf"))   
 
@@ -224,7 +236,7 @@ class Plot():
         if log_scale:
             axis.set_yscale("log")
 
-    def _modelData(self, axs, plot_cor=False, plot_white=False):
+    def _modelData(self, axs, model_name, plot_cor=False, plot_white=False):
         X_data, U_data, dX_data = self.sys.getData()
         time = np.arange(X_data.shape[0]) / self.frequency
 
@@ -240,18 +252,25 @@ class Plot():
                dX_cor = self.learn_cor.forward(X, U)
 
             if plot_white:
-                white_model = HolohoverModelGrey(args=self.args, params=self.params, dev="cpu")
-                dX_white = white_model.forward(X=X, U=U)
+                args_white = Args(model_type="HolohoverGrey")
+                params_white = Params(args=args_white)
+                white_sys = HolohoverSystem(args=args_white, dev="cpu")
+                white_model = HolohoverModelGrey(args=args_white, params=params_white, dev="cpu")
+
+                white_sys.loadData()  
+                _, U_data, _ = white_sys.getData()
+                U_white = U_data[self.plot_range[0]:self.plot_range[1],:]
+                dX_white = white_model.forward(X=X, U=U_white)
 
         axs[0].set_title(f"Finale dd(x)")
         axs[0].set_ylabel('[m/s^2]')
         axs[0].plot(time, dX_real[:,3], label="real", color="black")
         if plot_white:
             axs[0].plot(time, dX_white[:,3], label="white box", color="blue")
-            axs[0].plot(time, dX_model[:,3], "--", label="grey box", color="cyan")
+            axs[0].plot(time, dX_model[:,3], "--", label=model_name, color="cyan")
         if plot_cor:
-            axs[0].plot(time, dX_model[:,3], label="grey box", color="cyan")
-            axs[0].plot(time, dX_cor[:,3], "--", label="grey box corr.", color="orange")
+            axs[0].plot(time, dX_model[:,3], label=model_name, color="cyan")
+            axs[0].plot(time, dX_cor[:,3], "--", label=model_name+"corr.", color="orange")
         axs[0].legend()
 
         axs[1].set_title(f"Finale dd(y)")
@@ -259,10 +278,10 @@ class Plot():
         axs[1].plot(time, dX_real[:,4], label="real", color="black")
         if plot_white:
             axs[1].plot(time, dX_white[:,4], label="white box", color="blue")
-            axs[1].plot(time, dX_model[:,4], "--", label="grey box", color="cyan")
+            axs[1].plot(time, dX_model[:,4], "--", label=model_name, color="cyan")
         if plot_cor:
-            axs[1].plot(time, dX_model[:,4], label="grey box", color="cyan")
-            axs[1].plot(time, dX_cor[:,4], "--", label="grey box corr.", color="orange")
+            axs[1].plot(time, dX_model[:,4], label=model_name, color="cyan")
+            axs[1].plot(time, dX_cor[:,4], "--", label=model_name+"corr.", color="orange")
         axs[1].legend()
 
         axs[2].set_title(f"Finale dd(theta)")
@@ -271,10 +290,10 @@ class Plot():
         axs[2].plot(time, dX_real[:,5], label="real", color="black")
         if plot_white:
             axs[2].plot(time, dX_white[:,5], label="white box", color="blue")
-            axs[2].plot(time, dX_model[:,5], "--", label="grey box", color="cyan")
+            axs[2].plot(time, dX_model[:,5], "--", label=model_name, color="cyan")
         if plot_cor:
-            axs[2].plot(time, dX_model[:,5], label="grey box", color="cyan")
-            axs[2].plot(time, dX_cor[:,5], "--", label="grey box corr.", color="orange")
+            axs[2].plot(time, dX_model[:,5], label=model_name, color="cyan")
+            axs[2].plot(time, dX_cor[:,5], "--", label=model_name+"corr.", color="orange")
         axs[2].legend()
 
     def _modelError(self, axs, abs_error, rms_error):

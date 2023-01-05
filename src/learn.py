@@ -389,3 +389,73 @@ class LearnCorrection(Learn):
         print(f"Epoch {epoch}: \telapse time = {np.round(elapse_time,3)}, \ttesting loss = {loss_te}, \ttraining loss = {loss_tr}")
         print(f"Epoch {epoch}: \tabs error = {np.round(abs_error,4)}, \trms error = {np.round(rms_error,4)}, \tstd error = {np.round(std_error,4)}")
 
+
+class LearnBlackSimple(Learn):
+    def __init__(self, args, dev, system, model):
+        """
+        Args:
+            args: argument class instance
+            dev: pytorch device
+            system: system class instance
+            model: model class instance
+        """
+        Learn.__init__(self, args=args, dev=dev, system=system, model=model)
+
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=args.learning_rate, weight_decay=1e-6)
+
+    def forward(self, X, U):
+        """
+        Forward pass through model class instance
+        Args:
+            X: state, tensor (N,D)
+            U: control input, tensor (N,M)
+        Returns:
+            dX: state dynamics, tensor (N,D)
+        """
+        dX_X = self.model.forward(X, U)
+        return dX_X
+
+    def lossFunction(self, dX_X, dX_real):
+        """
+        Calc. loss
+        Args:
+            dX_X: approx. of system dynamics, tensor (N,D)
+            dX_real: real system dynamics, tensor (N,D)
+        Returns:
+            mse: average loss of batch X (scalar)
+        """
+        mse = torch.sum( torch.mean(torch.square(dX_X-dX_real), axis=0) / self.lossCoeff )
+
+        return mse
+
+    def evaluate(self, X_te, dX_te, U_te):
+        """
+        Evaluation step: calc. loss and abs. error on testing set
+        Args:
+            X_te: testing set state, tensor (N_te,D)
+            dX_te: testing set dynamics, tensor (N_te,D)
+            U_te: testing set control input, tensor (N_te,M)
+        """
+        X_te, dX_te, U_te = X_te.detach().clone(), dX_te.detach().clone(), U_te.detach().clone()
+        with torch.no_grad():
+            dX_X = self.model.forward(X_te, U_te)
+
+        self.metrics["losses_te"].append(self.lossFunction(dX_X, dX_te).detach().clone().float())
+        self.metrics["abs_error"].append(torch.mean(torch.abs(dX_X - dX_te), axis=0).detach().numpy())
+        self.metrics["rms_error"].append(torch.sqrt(torch.mean(torch.pow(dX_X - dX_te, 2), axis=0)).detach().numpy())
+        self.metrics["std_error"].append(torch.std(dX_X - dX_te, axis=0).detach().numpy())
+
+    def printMetrics(self, epoch, elapse_time):
+        """
+        Prints testing and training loss as well as abs. and RMS error
+        Args:
+            epoch: current epoch, int
+            elapse_time: elapse time of epoch, float
+        """
+        loss_te = self.metrics["losses_te"][-1]
+        loss_tr = self.metrics["losses_tr"][-1]
+        abs_error = self.metrics["abs_error"][-1][3:6]
+        rms_error = self.metrics["rms_error"][-1][3:6]
+        std_error = self.metrics["std_error"][-1][3:6]
+        print(f"Epoch {epoch}: \telapse time = {np.round(elapse_time,3)}, \ttesting loss = {loss_te}, \ttraining loss = {loss_tr}")
+        print(f"Epoch {epoch}: \tabs error = {np.round(abs_error,4)}, \trms error = {np.round(rms_error,4)}, \tstd error = {np.round(std_error,4)}")

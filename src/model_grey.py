@@ -281,7 +281,7 @@ class CorrectModelGrey(ModelGrey):
             X: state input batch (N, D)
             U: controll input batch (N, M)
         Returns:
-            dX_X: state derivative (N, D)
+            acc: acceleration (N, S)
         """
         acc = torch.zeros(X.shape[0],self.S)
 

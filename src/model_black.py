@@ -163,37 +163,59 @@ class HolohoverModelBlack(ModelBlack):
 
         # FNN: model parameters
         fnn_input_size = self.D
-        fnn_hidden1_size = 80
-        fnn_hidden2_size = 200
         fnn_output_size = self.D
 
         # GNN: model parameters
         gnn_input_size = self.D
+        gnn_hidden1_size = 20
+        gnn_hidden2_size = 80
+        gnn_hidden3_size = 200
+        gnn_hidden4_size = 200
+        gnn_hidden5_size = 100
+        gnn_hidden6_size = 50
         gnn_output_size = self.D*self.M # D*M (dim. of X times dim. of U)
 
-        # ICNN: model parameters
-        icnn_input_size = self.D
-        icnn_hidden1_size = 60
-        icnn_hidden2_size = 60
-        icnn_hidden3_size = 30
-        icnnn_output_size = 1
 
         # FCNN: layers
-        self.fnn_fc1 = nn.Linear(fnn_input_size, fnn_hidden1_size, bias=True)
-        self.fnn_fc2 = nn.Linear(fnn_hidden1_size, fnn_hidden2_size, bias=True)
-        self.fnn_fc3 = nn.Linear(fnn_hidden2_size, fnn_output_size, bias=True)
+        self.fnn_fc1 = nn.Linear(fnn_input_size, fnn_output_size, bias=False)
 
         # GCNN: layers
-        self.gnn_fc1 = nn.Linear(gnn_input_size, gnn_output_size, bias=True)
+        self.gnn_fc1 = nn.Linear(gnn_input_size, gnn_hidden1_size, bias=True)
+        self.gnn_fc2 = nn.Linear(gnn_hidden1_size, gnn_hidden2_size, bias=True)
+        self.gnn_fc3 = nn.Linear(gnn_hidden2_size, gnn_hidden3_size, bias=True)
+        self.gnn_fc4 = nn.Linear(gnn_hidden3_size, gnn_hidden4_size, bias=True)
+        self.gnn_fc5 = nn.Linear(gnn_hidden4_size, gnn_hidden5_size, bias=True)
+        self.gnn_fc6 = nn.Linear(gnn_hidden5_size, gnn_hidden6_size, bias=True)
+        self.gnn_fc7 = nn.Linear(gnn_hidden6_size, gnn_output_size, bias=True)
 
-        # ICNN: fully connected layers and input mapping
-        self.icnn_fc1 = nn.Linear(icnn_input_size, icnn_hidden1_size, bias=True)
-        self.icnn_fc2 = nn.Linear(icnn_hidden1_size, icnn_hidden2_size, bias=True)
-        self.icnn_fc3 = nn.Linear(icnn_hidden2_size, icnn_hidden3_size, bias=True)
-        self.icnn_fc4 = nn.Linear(icnn_hidden3_size, icnnn_output_size, bias=True)
-        self.icnn_im2 = nn.Linear(icnn_input_size, icnn_hidden2_size, bias=False)
-        self.icnn_im3 = nn.Linear(icnn_input_size, icnn_hidden3_size, bias=False)
-        self.icnn_im4 = nn.Linear(icnn_input_size, icnnn_output_size, bias=False)
+
+    def forwardFNN(self, X):
+        """
+        Forward pass through FNN
+        Args:
+            X: state input batch (N x D)
+        Returns:
+            f_X: output of FCNN (N x D)
+        """
+        return self.fnn_fc1(X)
+
+    def forwardGNN(self, X):
+        """
+        Forward pass through GNN
+        Args:
+            X: state input batch (N x D)
+        Returns:
+            g_X: output of GCNN (N x D x M)
+        """
+        g_X1 = self.relu( self.gnn_fc1(X) )
+        g_X2 = self.relu( self.gnn_fc2(g_X1) )
+        g_X3 = self.relu( self.gnn_fc3(g_X2) )
+        g_X4 = self.relu( self.gnn_fc4(g_X3) )
+        g_X5 = self.relu( self.gnn_fc5(g_X4) )
+        g_X6 = self.relu( self.gnn_fc6(g_X5) )
+        g_X7 = self.relu( self.gnn_fc7(g_X6) )
+
+        return g_X7.reshape([X.shape[0], self.D, self.M])
 
 
 class CSTRModelBlack(ModelBlack):
