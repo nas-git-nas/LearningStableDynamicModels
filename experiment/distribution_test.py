@@ -2,20 +2,21 @@ from cProfile import label
 import numpy as np
 import matplotlib.pyplot as plt
 from distribution_lqr_controller import DistributionLQRController
+import os
 
 class DistributionTest():
     def __init__(self):      
         
-        self.P = 0.1 # cycle periode
-        self.nb_rounds = 10000000
-        self.counter_max = 100
+        self.P = 0.001 # cycle periode
+        self.nb_rounds = 1000000
+        self.counter_max = 10
         self.counter = 0
         
         self.R = 0.5
         alpha_max = np.pi
         alpha_min = -np.pi
-        vel_max = 0.2
-        vel_min = -0.2
+        vel_max = 5
+        vel_min = -5
         dalpha_max = 0.1
         dalpha_min = -0.1
 
@@ -23,7 +24,7 @@ class DistributionTest():
         pos_max = self.R + self.border
         pos_min = -self.R - self.border
 
-        self.grid = np.array([0.05, 0.05, 0.2, 0.02, 0.02, 0.02]) # x, y, alpha, dx, dy, omega
+        self.grid = np.array([0.05, 0.05, 0.2, 0.5, 0.5, 0.02]) # x, y, alpha, dx, dy, omega
         self.state_max = np.array([pos_max, pos_max, alpha_max, vel_max, vel_max, dalpha_max])
         self.state_min = np.array([pos_min, pos_min, alpha_min, vel_min, vel_min, dalpha_min])
 
@@ -41,7 +42,7 @@ class DistributionTest():
             state = self.updateState(state)
             self.updateField(state)
 
-        self.calcJointProb()
+        # self.calcJointProb()
         self.plotField()
 
     def updateState(self, state):
@@ -130,6 +131,7 @@ class DistributionTest():
         # axs[1,1].set_ylabel('Nb. events')  
         # axs[1,1].plot(x_axis, self.dalpha_field, color="r")      
 
+        plt.savefig(os.path.join("plots/experiment", "experiment_distribution.pdf"))   
         plt.show()
 
     def _normalizeAngle(self, angle):

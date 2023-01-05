@@ -8,7 +8,8 @@ from src.params import Params
 from src.system import DHOSystem, CSTRSystem, HolohoverSystem
 from src.model_black import DHOModelBlack, CSTRModelBlack, HolohoverModelBlack
 from src.model_grey import HolohoverModelGrey, CorrectModelGrey
-from src.learn import LearnGreyModel, LearnCorrection, LearnStableModel
+from src.model_black_simple import ModelBlackSimple
+from src.learn import LearnGreyModel, LearnCorrection, LearnStableModel, LearnBlackSimple
 from src.plot import Plot
 from src.simulation import Simulation
 
@@ -23,7 +24,7 @@ def main():
     torch.manual_seed(0)
 
     # load arguments and parameters
-    args = Args(model_type="CSTR")
+    args = Args(model_type="HolohoverBlackSimple")
     params = None
     if args.model_type == "HolohoverGrey":
         params = Params(args=args)
@@ -41,7 +42,7 @@ def main():
         sys = DHOSystem(args=args, dev=device)
     elif args.model_type == "CSTR":
         sys = CSTRSystem(args=args, dev=device)
-    elif args.model_type == "HolohoverBlack" or args.model_type == "HolohoverGrey":
+    elif args.model_type == "HolohoverBlack" or args.model_type == "HolohoverGrey" or args.model_type == "HolohoverBlackSimple":
         sys = HolohoverSystem(args=args, dev=device)
 
     # init. equilibrium point
@@ -53,7 +54,7 @@ def main():
         ueq = torch.tensor([14.19])
         xeq = sys.equPoint(ueq, U_hat=False)
         ueq = sys.uMap(ueq)
-    elif args.model_type == "HolohoverBlack" or args.model_type == "HolohoverGrey":
+    elif args.model_type == "HolohoverBlack" or args.model_type == "HolohoverGrey" or args.model_type == "HolohoverBlackSimple":
         ueq = torch.zeros(sys.M)
         xeq = torch.zeros(sys.D)
         ueq = sys.uMap(ueq)
@@ -70,6 +71,8 @@ def main():
     elif args.model_type == "HolohoverGrey":
         model = HolohoverModelGrey(args=args, params=params, dev=device)
         cor_model = CorrectModelGrey(args=args, dev=dev)
+    elif args.model_type == "HolohoverBlackSimple":
+        model = ModelBlackSimple(args=args, dev=device)
 
     # load model to continue learning process
     if args.load_model:
@@ -78,12 +81,14 @@ def main():
     # init. base learner
     ld = None
     lc = None
-    if args.model_type == "DHO" or args.model_type == "CSTR":
+    if args.model_type == "DHO" or args.model_type == "CSTR" or args.model_type == "HolohoverBlack":
         ld = LearnStableModel(args=args, dev=device, system=sys, model=model)
     elif args.model_type == "HolohoverGrey":
         ld = LearnGreyModel(args=args, dev=device, system=sys, model=model)
         if args.learn_correction: # init. correction learner
             lc = LearnCorrection(args=args, dev=dev, system=sys, model=cor_model, base_model=model)
+    elif args.model_type == "HolohoverBlackSimple":
+        ld = LearnBlackSimple(args=args, dev=device, system=sys, model=model)
 
     # learn dynamics 
     ld.optimize()  
@@ -102,6 +107,9 @@ def main():
             plot.corModel()
         plot.paramsSig2Thrust()
         plot.paramsVec()
+        plot.dataHistogram()
+    elif args.model_type == "HolohoverBlack" or args.model_type == "HolohoverBlackSimple":     
+        plot.blackModel(ueq)
         plot.dataHistogram()
 
     # # simulate system
