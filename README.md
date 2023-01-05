@@ -5,7 +5,7 @@ This repository is the implementation to prepare the data for processing and to 
 * Professor: Colin Jones
 
 ## System requirements
-The code is run with Python 3.10.9 and all library requirements are found in _requirements_.
+The code is run with Python 3.10.9 and all library requirements are found in the file _requirements_.
 
 ## Data
 The data is contained in the _experiment_ folder. Only the csv files are included due to the large size of the ROS files (deb3 and mcap files):
