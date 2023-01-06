@@ -1,5 +1,5 @@
 # Learning System Dynamics of Holohover
-This repository is the implementation to prepare the data for processing and to learn the system dynamics of the Holohover vehicle. It is the code used for a semester project at STI IGM LA3, EPFL.
+This repository is the implementation to prepare the data for processing and to learn the system dynamics of the Holohover vehicle. It is a semester project at STI IGM LA3, EPFL. The report is found under _SemesterProjectReport_NicolajSchmid.pdf_.
 * Student: Nicolaj Schmid
 * Supervisor: Roland Schwan
 * Professor: Colin Jones
